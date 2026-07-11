@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amber Compiler Pipeline Visualizer</title><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a12;color:#c8c8d4;font-family:'SF Mono',Monaco,Consolas,monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+#header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:linear-gradient(180deg,#14142a,#0a0a12);border-bottom:1px solid #1a1a3a;flex-shrink:0;z-index:10}
+#header h1{font-size:15px;color:#f0a030;letter-spacing:1px}
+#header h1 span{color:#888;font-size:11px;font-weight:400}
+#modes{display:flex;gap:4px}
+.mbtn{background:#1a1a2e;color:#888;border:1px solid #2a2a4a;padding:6px 12px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;transition:all .2s}
+.mbtn:hover{border-color:#f0a030;color:#ccc}
+.mbtn.on{background:#f0a03022;border-color:#f0a030;color:#f0a030}
+#hud{font-size:11px;color:#555;text-align:right}
+#hud span{color:#f0a030}
+canvas{display:block;flex:1}
+#input-area{display:flex;gap:8px;padding:8px 16px;background:#0a0a12;border-top:1px solid #1a1a3a;flex-shrink:0}
+#input-area textarea{flex:1;background:#111122;border:1px solid #2a2a4a;color:#e0e0e8;padding:8px;font-family:inherit;font-size:12px;border-radius:4px;resize:none;height:64px}
+#input-area textarea:focus{outline:none;border-color:#f0a030}
+#compile-btn{background:#f0a030;color:#000;border:none;padding:0 20px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border-radius:4px;height:64px;white-space:nowrap}
+#compile-btn:hover{background:#ffb840}
+#log{position:fixed;bottom:80px;right:16px;width:320px;max-height:200px;overflow-y:auto;font-size:10px;color:#555;background:#0a0a12ee;border:1px solid #1a1a3a;border-radius:4px;padding:8px;pointer-events:none;z-index:20}
+#log div{margin-bottom:2px;border-left:2px solid #2a2a4a;padding-left:6px}
+#log .warn{border-color:#f0a030;color:#f0a030}
+#log .err{border-color:#e04040;color:#e04040}
+@media(max-width:600px){
+#header h1{font-size:13px}
+.mbtn{padding:4px 8px;font-size:10px}
+#input-area textarea{font-size:11px;height:50px}
+#compile-btn{font-size:11px;height:50px;padding:0 12px}
+}
+</style></head><body>
+<div id="header">
+<h1>AMBER <span>Shell Compiler Pipeline</span></h1>
+<div id="modes">
+<button class="mbtn on" data-m="0">SOURCE</button>
+<button class="mbtn" data-m="1">COMPILE</button>
+<button class="mbtn" data-m="2">COMPARE</button>
+<button class="mbtn" data-m="3">Sandbox</button>
+</div>
+<div id="hud">tokens:<span id="h-tok">0</span> <span style="color:#444">|</span> stages:<span id="h-stg">0</span></div>
+</div>
+<canvas id="c"></canvas>
+<div id="input-area">
+<textarea id="code" placeholder="// Amber source code — try: print('hello amber')"></textarea>
+<button id="compile-btn">COMPILE &#9654;</button>
+</div>
+<div id="log"></div>
+<script>
+(function(){
+const cv=document.getElementById('c'),cx=cv.getContext('2d');
+let W,H,mode=0,tick=0;
+const defaultCode=`// Amber: A language compiled to shell
+var greeting = "Hello from Amber!"
+print(greeting)
+
+// Calculate factorial
+func factorial(n)
+  if n <= 1 then return 1
+  return n * factorial(n - 1)
+end
+
+print(factorial(6))
+`;
+document.getElementById('code').value=defaultCode;
+
+function resize(){W=cv.width=cv.clientWidth;H=cv.height=cv.clientHeight}
+window.addEventListener('resize',resize);resize();
+
+// Mode buttons
+document.querySelectorAll('.mbtn').forEach(b=>{
+b.addEventListener('click',()=>{
+document.querySelectorAll('.mbtn').forEach(x=>x.classList.remove('on'));
+b.classList.add('on');mode=+b.dataset.m;
+});
+});
+
+// Touch swipe
+let tx=0;
+cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX},{passive:true});
+cv.addEventListener('touchend',e=>{
+const d=e.changedTouches[0].clientX-tx;
+if(Math.abs(d)>50){
+if(d<0)mode=(mode+1)%4;else mode=(mode+3)%4;
+document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)});
+}
+},{passive:true});
+
+// Keyboard nav
+document.addEventListener('keydown',e=>{
+if(e.key==='ArrowRight'){mode=(mode+1)%4;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
+if(e.key==='ArrowLeft'){mode=(mode+3)%4;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
+if(e.key==='Enter'&&!e.ctrlKey){e.preventDefault();doCompile()}
+});
+
+// Seeded PRNG
+function rng(seed){let s=seed;return()=>{s=(s*1664525+1013904223)&0x7fffffff;return s/0x7fffffff}}
+const R=rng(42);
+
+function log(msg,cls){
+const l=document.getElementById('log');
+const d=document.createElement('div');
+d.className=cls||'';d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
+l.appendChild(d);l.scrollTop=l.scrollHeight;
+if(l.children.length>50)l.removeChild(l.firstChild);
+}
+
+// Particle system
+class Particle{
+constructor(x,y,vx,vy,col,life){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.col=col;this.life=life;this.ml=life;this.trail=[];
+}
+update(){this.trail.push({x:this.x,y:this.y});if(this.trail.length>8)this.trail.shift();this.x+=this.vx;this.y+=this.vy;this.vx*=0.99;this.vy*=0.99;this.life--;return this.life>0}
+draw(){
+if(this.life<=0)return;
+const a=this.life/this.ml;
+cx.globalAlpha=a*0.8;
+cx.fillStyle=this.col;
+for(let i=0;i<this.trail.length;i++){
+const t=this.trail[i];cx.globalAlpha=a*(i/this.trail.length)*0.4;
+cx.beginPath();cx.arc(t.x,t.y,1.5,0,6.28);cx.fill();
+}
+cx.globalAlpha=a;cx.beginPath();cx.arc(this.x,this.y,2,0,6.28);cx.fill();
+cx.globalAlpha=1;
+}
+}
+
+let particles=[];
+let compileState={phase:0,progress:0,done:false};
+
+function spawnParticle(x,y,col){
+const angle=R()*Math.PI*2,speed=0.5+R()*2;
+particles.push(new Particle(x,y,Math.cos(angle)*speed,Math.sin(angle)*speed,col,40+R()*40));
+}
+
+// Tokenizer colors
+const KEYWORDS=['var','func','if','then','else','end','return','print','for','while','in','import','as'];
+const BUILTINS=['print','len','range','abs','max','min','type'];
+
+function tokenize(src){
+const tokens=[];
+const re=/\s+|\/\/.*|"[^"]*"|'[^']*'|[a-zA-Z_]\w*|[+\-*/=<>!&|{}()\[\]:;,.\d]+/g;
+let m;while((m=re.exec(src))!==null){
+const w=m[0];if(!w.trim().length)continue;
+let type='ident';
+if(KEYWORDS.includes(w))type='kw';
+else if(BUILTINS.includes(w))type='builtin';
+else if(/^\d/.test(w))type='number';
+tokens.push({word:w,type});
+}
+return tokens;
+}
+
+function doCompile(){
+const src=document.getElementById('code').value;
+if(!src.trim()){log('No source code','err');return}
+compileState={phase:0,progress:0,done:false};
+particles=[];
+log('Starting Amber compilation...');
+const tokens=tokenize(src);
+document.getElementById('h-tok').textContent=tokens.length;
+log('Tokenized: '+tokens.length+' tokens');
+}
+
+document.getElementById('compile-btn').addEventListener('click',doCompile);
+
+// Draw grid background
+function drawGrid(){
+cx.fillStyle='#0a0a12';cx.fillRect(0,0,W,H);
+cx.strokeStyle='#111122';cx.lineWidth=0.5;
+const g=40;
+for(let x=0;x<W;x+=g){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+for(let y=0;y<H;y+=g){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+}
+
+// Mode 0: Source Editor
+function drawSource(){
+drawGrid();
+const src=document.getElementById('code').value||defaultCode;
+const lines=src.split('\n');
+const lh=16;const startY=50;
+
+cx.font='13px SF Mono,Monaco,Consolas,monospace';
+// Syntax highlight
+for(let i=0;i<Math.min(lines.length,Math.floor((H-80)/lh));i++){
+const y=startY+i*lh;
+const tokens=tokenize(lines[i]);
+let x=16;
+for(const t of tokens){
+if(t.type==='kw')cx.fillStyle='#f0a030';
+else if(t.type==='number')cx.fillStyle='#40c8a0';
+else if(t.type==='builtin')cx.fillStyle='#4080f0';
+else cx.fillStyle='#c8c8d4';
+cx.fillText(t.word,x,y);
+x+=cx.measureText(t.word).width+1;
+}
+}
+
+// Line numbers
+cx.fillStyle='#333';cx.font='11px monospace';
+for(let i=0;i<Math.min(lines.length,Math.floor((H-80)/lh));i++){
+cx.fillText(''+(i+1),8,startY+i*lh);
+}
+
+// Token particles flowing from source
+if(tick%3===0){
+const lines=src.split('\n');
+const active=Math.min(lines.length,Math.floor((H-80)/lh));
+const li=Math.floor(R()*active);
+const tokens=tokenize(lines[li]);
+if(tokens.length){
+const t=R()<0.15?'#f0a030':R()<0.3?'#40c8a0':R()<0.5?'#4080f0':'#888';
+const px=20+R()*300;
+spawnParticle(px,startY+li*lh+10,t);
+}
+}
+
+// Update particles
+particles=particles.filter(p=>{p.draw();return p.update()});
+
+// Title
+cx.fillStyle='#f0a03030';cx.font='bold 12px monospace';
+cx.fillText('AMBER SOURCE EDITOR — '+tokens.length+' tokens loaded',16,H-20);
+}
+
+// Mode 1: Compile Pipeline
+function drawCompile(){
+drawGrid();
+const stages=['TOKENIZE','PARSER','AST BUILDER','CODE GEN','SHELL OUTPUT'];
+const colors=['#40c8a0','#8080f0','#f0a030','#e040e0','#e04040'];
+const sx=W/2;
+const stageH=100;const startY=60;
+
+// Draw pipeline stages
+for(let i=0;i<stages.length;i++){
+const y=startY+i*stageH;
+const active=compileState.phase>i;
+const current=compileState.phase===i;
+
+// Stage box
+const bw=300;
+const bx=sx-bw/2;
+cx.strokeStyle=current?'#f0a030':active?'#40c8a044':'#1a1a3a';
+cx.lineWidth=current?2:1;
+cx.fillStyle=active?'#1a2a1a':'#0f0f1f';
+cx.fillRect(bx,y,bw,70);
+cx.strokeRect(bx,y,bw,70);
+
+// Stage label
+cx.fillStyle=current?'#f0a030':active?'#40c8a0':'#555';
+cx.font='bold 12px monospace';
+cx.fillText(stages[i],sx-60,y+20);
+
+// Progress bar
+if(current){
+const pw=(bw-40)*compileState.progress;
+cx.fillStyle='#f0a03044';cx.fillRect(bx+20,y+35,bw-40,12);
+cx.fillStyle='#f0a030';cx.fillRect(bx+20,y+35,pw,12);
+}
+else if(active){
+cx.fillStyle='#40c8a0';cx.fillRect(bx+20,y+35,bw-40,12);
+}
+else{
+cx.fillStyle='#222';cx.fillRect(bx+20,y+35,bw-40,12);
+}
+
+// Stage icon
+cx.fillStyle=current?'#f0a030':'#444';
+cx.font='20px monospace';
+const icons=['&#9889;','&#9876;','&#9737;','&#9881;','&#9654;'];
+cx.fillText(icons[i]||'&#9679;',sx+140,y+22);
+
+// Connecting arrows
+if(i<stages.length-1){
+const ay=y+75;
+cx.strokeStyle='#2a2a4a';cx.lineWidth=1;
+cx.beginPath();cx.moveTo(sx-80,ay);cx.lineTo(sx+80,ay);cx.stroke();
+cx.fillStyle='#f0a030';cx.beginPath();
+cx.moveTo(sx+80,ay);cx.lineTo(sx+74,ay-4);cx.lineTo(sx+74,ay+4);cx.fill();
+}
+}
+
+// Ambient particles in active stages
+if(tick%4===0){
+for(let i=0;i<Math.min(compileState.phase+1,5);i++){
+const y=startY+i*stageH+35;
+spawnParticle(sx+(R()-0.5)*100,y,colors[i]||'#f0a030');
+}
+}
+particles=particles.filter(p=>{p.draw();return p.update()});
+
+// Update compile progress
+if(compileState.phase<5&&!compileState.done){
+if(compileState.progress<1){
+compileState.progress+=0.008+R()*0.005;
+}else{
+compileState.phase++;compileState.progress=0;
+if(compileState.phase===5){
+compileState.done=true;
+log('Compilation complete! Shell output generated.');
+}
+}
+}
+
+// Status
+cx.fillStyle=compileState.done?'#40c8a0':'#f0a030';
+cx.font='bold 13px monospace';
+cx.textAlign='center';
+cx.fillText(compileState.done?'COMPILED SUCCESSFULLY':'COMPILING... '+Math.floor(compileState.progress*100)+'%',sx,H-20);
+cx.textAlign='left';
+document.getElementById('h-stg').textContent=compileState.phase;
+}
+
+// Mode 2: Target Compare
+function drawCompare(){
+drawGrid();
+const targets=['BASH','KSH','ZSH'];
+const colors=['#e04040','#f0a030','#40c8a0'];
+const compat=[[100,85,78],[85,100,82],[78,82,100]];
+const w=120;const gap=20;const tw=targets.length*w+(targets.length-1)*gap;
+const startX=(W-tw)/2;const startY=40;
+
+// Target cards
+for(let i=0;i<targets.length;i++){
+const x=startX+i*(w+gap);
+const y=startY;
+
+// Card background
+cx.fillStyle='#0f0f1f';cx.strokeStyle=colors[i];cx.lineWidth=1;
+cx.fillRect(x,y,w,120);cx.strokeRect(x,y,w,120);
+
+// Target name
+cx.fillStyle=colors[i];cx.font='bold 14px monospace';
+cx.fillText(targets[i],x+w/2-20,y+25);
+
+// Compatibility ring
+const rx=x+w/2,ry=y+75,rr=30;
+cx.strokeStyle='#1a1a3a';cx.lineWidth=2;
+cx.beginPath();cx.arc(rx,ry,rr,0,6.28);cx.stroke();
+
+for(let j=0;j<3;j++){
+if(i===j)continue;
+const pct=compat[i][j]/100;
+const sa=-Math.PI/2+(j-i+3)%3*Math.PI*2/3;
+cx.strokeStyle=colors[j];cx.lineWidth=4;
+cx.beginPath();cx.arc(rx,ry,rr-2,sa,sa+pct*Math.PI*2/3);cx.stroke();
+}
+
+// % label
+cx.fillStyle='#888';cx.font='10px monospace';
+cx.fillText('85% compat',x+w/2-25,y+115);
+}
+
+// Compatibility matrix
+const mx=W/2;const my=210;
+cx.fillStyle='#888';cx.font='bold 12px monospace';
+cx.textAlign='center';
+cx.fillText('COMPATIBILITY MATRIX',mx,my);
+cx.textAlign='left';
+
+const ms=80;const mStartX=W/2-ms*1.5-40;
+for(let i=0;i<3;i++){
+cx.fillStyle='#888';cx.font='10px monospace';
+cx.fillText(targets[i],mStartX-20,my+30+i*ms);
+
+for(let j=0;j<3;j++){
+const v=compat[i][j];
+const intensity=v/100;
+cx.fillStyle=`rgba(${Math.round(240*intensity+40*(1-intensity))},${Math.round(160*intensity+40*(1-intensity))},${Math.round(48*intensity+40*(1-intensity))},${0.3+intensity*0.7})`;
+cx.fillRect(mStartX,my+25+i*ms,ms,ms-4);
+cx.fillStyle='#000';cx.font='10px monospace';
+cx.fillText(''+v,mStartX+ms/2-8,my+25+i*ms+ms/2+3);
+}
+}
+
+// Diff highlighting bar
+const diffBarY=my+30*4+10;
+cx.fillStyle='#555';cx.font='12px monospace';
+cx.fillText('SYNTAX DIFF',W/2,diffBarY);
+
+const diffs=[
+{line:'print("hello")',bash:'print("hello")',ksh:'echo "hello"',zsh:'print -r "hello"',match:false},
+{line:'func f() { }',bash:'# function f() { }',ksh:'function f { }',zsh:'f() { }',match:false},
+];
+
+for(let d=0;d<diffs.length;d++){
+const dy=diffBarY+20+d*25;
+cx.fillStyle='#333';cx.font='10px monospace';
+cx.fillText('#'+(d+1),16,dy);
+for(let t=0;t<3;t++){
+const tx2=W/4*(t+1)-20;
+cx.fillStyle=diffs[d].match?colors[t]:'#666';
+cx.font='9px monospace';
+const code=[diffs[d].bash,diffs[d].ksh,diffs[d].zsh][t];
+cx.fillText(code.substring(0,18),tx2,dy);
+}
+}
+
+// Ambient particles
+if(tick%6===0){
+const ti=Math.floor(R()*3);
+spawnParticle(startX+ti*(w+gap)+w/2,startY+60,colors[ti]);
+}
+particles=particles.filter(p=>{p.draw();return p.update()});
+}
+
+// Mode 3: Execution Sandbox
+function drawSandbox(){
+drawGrid();
+const env={vars:{greeting:'Hello from Amber',result:'720'},
+scope:'global',pipeline:['parse','compile','execute'],
+envVars:{HOME:'/home',SHELL:'/bin/amber',PATH:'.'}};
+
+// Left panel: Variable Explorer
+const px=16;const py=20;
+cx.fillStyle='#0f0f1f';cx.fillRect(px,py,260,H-40);
+cx.strokeStyle='#1a1a3a';cx.lineWidth=1;cx.strokeRect(px,py,260,H-40);
+
+cx.fillStyle='#f0a030';cx.font='bold 12px monospace';
+cx.fillText('VARIABLE EXPLORER',px+10,py+22);
+
+let vy=py+40;
+cx.fillStyle='#888';cx.font='11px monospace';
+cx.fillText('Scope: '+env.scope,px+10,vy);vy+=20;
+cx.fillText('--- Environment ---',px+10,vy);vy+=18;
+for(const[k,v]of Object.entries(env.envVars)){
+cx.fillStyle='#40c8a0';cx.fillText(k+'='+v,px+10,vy);vy+=16;
+}
+cx.fillStyle='#888';cx.fillText('--- Variables ---',px+10,vy);vy+=18;
+for(const[k,v]of Object.entries(env.vars)){
+cx.fillStyle='#f0a030';cx.fillText(k+' = "'+v+'"',px+10,vy);vy+=16;
+}
+
+// Center: Pipeline flow
+const cpx=W/2;const cpy=H/2;
+const pl=env.pipeline;
+cx.fillStyle='#888';cx.font='bold 12px monospace';
+cx.textAlign='center';
+cx.fillText('EXECUTION PIPELINE',cpx,30);
+cx.textAlign='left';
+
+const phaseWidth=160;const phaseGap=40;
+const totalW=pl.length*phaseWidth+(pl.length-1)*phaseGap;
+const pStartX=(W-totalW)/2;
+
+for(let i=0;i<pl.length;i++){
+const x=pStartX+i*(phaseWidth+phaseGap);
+const y=50;
+
+// Phase box
+cx.fillStyle='#0f0f1f';
+cx.strokeStyle='#2a2a4a';cx.lineWidth=1;
+cx.fillRect(x,y,phaseWidth,60);cx.strokeRect(x,y,phaseWidth,60);
+
+// Status indicator
+const done=3>i;
+if(done){
+cx.fillStyle='#40c8a0';
+cx.fillRect(x+8,y+8,6,6);
+}else{
+cx.fillStyle='#f0a030';
+cx.fillRect(x+8,y+8,6,6);
+}
+
+cx.fillStyle=done?'#40c8a0':'#f0a030';
+cx.font='11px monospace';
+cx.fillText(pl[i].toUpperCase(),x+22,y+25);
+
+// Arrow between phases
+if(i<pl.length-1){
+const ax=x+phaseWidth+4;
+cx.strokeStyle='#f0a03066';cx.lineWidth=2;
+cx.beginPath();cx.moveTo(ax,y+30);cx.lineTo(ax+phaseGap-4,y+30);cx.stroke();
+cx.fillStyle='#f0a030';
+cx.beginPath();cx.moveTo(ax+phaseGap-4,y+30);
+cx.lineTo(ax+phaseGap-10,y+26);cx.lineTo(ax+phaseGap-10,y+34);cx.fill();
+}
+}
+
+// Right panel: Event Log
+const rx=W-280;const ry=20;
+cx.fillStyle='#0f0f1f';cx.fillRect(rx,ry,260,H-40);
+cx.strokeStyle='#1a1a3a';cx.strokeRect(rx,ry,260,H-40);
+
+cx.fillStyle='#f0a030';cx.font='bold 12px monospace';
+cx.fillText('EXECUTION LOG',rx+10,ry+22);
+
+const events=[
+{t:'00:00.001',msg:'Amber runtime initialized',color:'#40c8a0'},
+{t:'00:00.003',msg:'Tokenizing source (42 tokens)',color:'#888'},
+{t:'00:00.005',msg:'AST depth: 6 levels',color:'#888'},
+{t:'00:00.008',msg:'Generated bash-compatible output',color:'#f0a030'},
+{t:'00:00.010',msg:'Shell: /bin/bash --norc',color:'#40c8a0'},
+{t:'00:00.012',msg:'Running: print("Hello from Amber!")',color:'#40c8a0'},
+{t:'00:00.015',msg:'Output: Hello from Amber!',color:'#40c8a0'},
+{t:'00:00.018',msg:'Running: factorial(6)',color:'#40c8a0'},
+{t:'00:00.022',msg:'Recursion depth: 6',color:'#f0a030'},
+{t:'00:00.025',msg:'Result: 720',color:'#40c8a0'},
+{t:'00:00.030',msg:'Pipeline complete',color:'#40c8a0'},
+];
+
+for(let i=0;i<Math.min(events.length,Math.floor((H-60)/16));i++){
+const ey=ry+38+i*16;
+cx.fillStyle='#333';cx.font='9px monospace';
+cx.fillText(events[i].t,rx+10,ey);
+cx.fillStyle=events[i].color;
+cx.fillText(events[i].msg,rx+65,ey);
+}
+
+// Ambient particles from execution
+if(tick%5===0){
+spawnParticle(W/2+(R()-0.5)*200,50,'#f0a030');
+}
+particles=particles.filter(p=>{p.draw();return p.update()});
+
+// Exit code
+cx.fillStyle='#40c8a0';cx.font='bold 12px monospace';
+cx.textAlign='center';
+cx.fillText('EXIT CODE: 0 (SUCCESS)',W/2,H-20);
+cx.textAlign='left';
+}
+
+// Main loop
+function animate(){
+tick++;
+switch(mode){
+case 0:drawSource();break;
+case 1:drawCompile();break;
+case 2:drawCompare();break;
+case 3:drawSandbox();break;
+}
+requestAnimationFrame(animate);
+}
+
+log('Amber Compiler Pipeline v1.0 — Mode 0: Source Editor','warn');
+log('Swipe/arrow keys to switch modes','');
+log('Click COMPILE to run the compilation pipeline','');
+animate();
+})();
+</script></body></html>
