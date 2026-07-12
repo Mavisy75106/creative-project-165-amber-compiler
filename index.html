@@ -1,64 +1,94 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amber Compiler Pipeline Visualizer</title><style>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amber Language Studio</title><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a12;color:#c8c8d4;font-family:'SF Mono',Monaco,Consolas,monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
-#header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:linear-gradient(180deg,#14142a,#0a0a12);border-bottom:1px solid #1a1a3a;flex-shrink:0;z-index:10}
-#header h1{font-size:15px;color:#f0a030;letter-spacing:1px}
-#header h1 span{color:#888;font-size:11px;font-weight:400}
-#modes{display:flex;gap:4px}
-.mbtn{background:#1a1a2e;color:#888;border:1px solid #2a2a4a;padding:6px 12px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;transition:all .2s}
+#header{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:linear-gradient(180deg,#14142a,#0a0a12);border-bottom:1px solid #1a1a3a;flex-shrink:0;z-index:10}
+#header h1{font-size:14px;color:#f0a030;letter-spacing:1px}
+#header h1 span{color:#888;font-size:10px;font-weight:400}
+#modes{display:flex;gap:3px;flex-wrap:wrap;max-width:60vw}
+.mbtn{background:#1a1a2e;color:#888;border:1px solid #2a2a4a;padding:4px 8px;font-size:10px;font-family:inherit;cursor:pointer;border-radius:3px;transition:all .2s;white-space:nowrap}
 .mbtn:hover{border-color:#f0a030;color:#ccc}
 .mbtn.on{background:#f0a03022;border-color:#f0a030;color:#f0a030}
-#hud{font-size:11px;color:#555;text-align:right}
+#hud{font-size:10px;color:#555;text-align:right}
 #hud span{color:#f0a030}
 canvas{display:block;flex:1}
-#input-area{display:flex;gap:8px;padding:8px 16px;background:#0a0a12;border-top:1px solid #1a1a3a;flex-shrink:0}
-#input-area textarea{flex:1;background:#111122;border:1px solid #2a2a4a;color:#e0e0e8;padding:8px;font-family:inherit;font-size:12px;border-radius:4px;resize:none;height:64px}
+#input-area{display:none;flex-direction:column;gap:4px;padding:6px 12px;background:#0a0a12;border-top:1px solid #1a1a3a;flex-shrink:0}
+#input-area.active{display:flex}
+#input-area textarea{flex:1;background:#111122;border:1px solid #2a2a4a;color:#e0e0e8;padding:6px;font-family:inherit;font-size:11px;border-radius:3px;resize:none;min-height:48px}
 #input-area textarea:focus{outline:none;border-color:#f0a030}
-#compile-btn{background:#f0a030;color:#000;border:none;padding:0 20px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border-radius:4px;height:64px;white-space:nowrap}
+#compile-row{display:flex;gap:4px;align-items:center}
+#compile-btn{background:#f0a030;color:#000;border:none;padding:6px 16px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;border-radius:3px}
 #compile-btn:hover{background:#ffb840}
-#log{position:fixed;bottom:80px;right:16px;width:320px;max-height:200px;overflow-y:auto;font-size:10px;color:#555;background:#0a0a12ee;border:1px solid #1a1a3a;border-radius:4px;padding:8px;pointer-events:none;z-index:20}
-#log div{margin-bottom:2px;border-left:2px solid #2a2a4a;padding-left:6px}
+#output-area{display:none;flex-direction:column;padding:6px 12px 6px;background:#060610;border-top:1px solid #1a1a3a;flex-shrink:0}
+#output-area.active{display:flex}
+#output-area .label{font-size:9px;color:#555;margin-bottom:2px;text-transform:uppercase;letter-spacing:1px}
+#output-code{background:#0a0a16;border:1px solid #1a1a3a;color:#40c8a0;padding:6px;font-family:inherit;font-size:10px;border-radius:3px;overflow:auto;white-space:pre;flex:1;line-height:1.4}
+#output-code .kw{color:#f0a030}
+#output-code .str{color:#40c8a0}
+#output-code .cmt{color:#444}
+#log{position:fixed;bottom:80px;right:12px;width:280px;max-height:160px;overflow-y:auto;font-size:9px;color:#555;background:#0a0a12ee;border:1px solid #1a1a3a;border-radius:3px;padding:6px;pointer-events:none;z-index:20}
+#log div{margin-bottom:1px;border-left:2px solid #2a2a4a;padding-left:4px}
 #log .warn{border-color:#f0a030;color:#f0a030}
 #log .err{border-color:#e04040;color:#e04040}
 @media(max-width:600px){
-#header h1{font-size:13px}
-.mbtn{padding:4px 8px;font-size:10px}
-#input-area textarea{font-size:11px;height:50px}
-#compile-btn{font-size:11px;height:50px;padding:0 12px}
+#header h1{font-size:11px}
+.mbtn{padding:3px 5px;font-size:8px}
 }
 </style></head><body>
 <div id="header">
-<h1>AMBER <span>Shell Compiler Pipeline</span></h1>
+<h1>AMBER <span>Language Studio</span></h1>
 <div id="modes">
 <button class="mbtn on" data-m="0">SOURCE</button>
 <button class="mbtn" data-m="1">COMPILE</button>
 <button class="mbtn" data-m="2">COMPARE</button>
-<button class="mbtn" data-m="3">Sandbox</button>
+<button class="mbtn" data-m="3">DECORATORS</button>
+<button class="mbtn" data-m="4">SANDBOX</button>
 </div>
-<div id="hud">tokens:<span id="h-tok">0</span> <span style="color:#444">|</span> stages:<span id="h-stg">0</span></div>
+<div id="hud"><span id="h-tok">0</span> tokens | <span id="h-stg">0</span> stages</div>
 </div>
 <canvas id="c"></canvas>
-<div id="input-area">
-<textarea id="code" placeholder="// Amber source code — try: print('hello amber')"></textarea>
+<div id="input-area" class="active">
+<textarea id="code" spellcheck="false" placeholder="// Amber source code
+print('hello world')
+func factorial(n)
+  if n <= 1 then return 1
+  return n * factorial(n - 1)
+end"></textarea>
+<div id="compile-row">
 <button id="compile-btn">COMPILE &#9654;</button>
+</div>
+</div>
+<div id="output-area">
+<div class="label">Generated Shell Output</div>
+<div id="output-code"></div>
 </div>
 <div id="log"></div>
 <script>
 (function(){
 const cv=document.getElementById('c'),cx=cv.getContext('2d');
 let W,H,mode=0,tick=0;
-const defaultCode=`// Amber: A language compiled to shell
+const defaultCode=`// Amber: High-level language compiled to shell
 var greeting = "Hello from Amber!"
 print(greeting)
 
-// Calculate factorial
+// Calculate factorial with pattern matching
 func factorial(n)
-  if n <= 1 then return 1
-  return n * factorial(n - 1)
+  match n
+    0 => 1
+    1 => 1
+    _ => n * factorial(n - 1)
+  end
+end
+
+// Decorated function
+@cache
+@retry(max=3)
+func expensive_compute(x)
+  return x * x + x
 end
 
 print(factorial(6))
+print(expensive_compute(42))
 `;
 document.getElementById('code').value=defaultCode;
 
@@ -79,15 +109,15 @@ cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX},{passive:true});
 cv.addEventListener('touchend',e=>{
 const d=e.changedTouches[0].clientX-tx;
 if(Math.abs(d)>50){
-if(d<0)mode=(mode+1)%4;else mode=(mode+3)%4;
+if(d<0)mode=(mode+1)%5;else mode=(mode+4)%5;
 document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)});
 }
 },{passive:true});
 
 // Keyboard nav
-document.addEventListener('keydown',e=>{
-if(e.key==='ArrowRight'){mode=(mode+1)%4;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
-if(e.key==='ArrowLeft'){mode=(mode+3)%4;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
+document.addEventListener('keydown,e=>{
+if(e.key==='ArrowRight'){mode=(mode+1)%5;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
+if(e.key==='ArrowLeft'){mode=(mode+4)%5;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
 if(e.key==='Enter'&&!e.ctrlKey){e.preventDefault();doCompile()}
 });
 
@@ -105,8 +135,7 @@ if(l.children.length>50)l.removeChild(l.firstChild);
 
 // Particle system
 class Particle{
-constructor(x,y,vx,vy,col,life){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.col=col;this.life=life;this.ml=life;this.trail=[];
-}
+constructor(x,y,vx,vy,col,life){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.col=col;this.life=life;this.ml=life;this.trail=[];}
 update(){this.trail.push({x:this.x,y:this.y});if(this.trail.length>8)this.trail.shift();this.x+=this.vx;this.y+=this.vy;this.vx*=0.99;this.vy*=0.99;this.life--;return this.life>0}
 draw(){
 if(this.life<=0)return;
@@ -123,45 +152,197 @@ cx.globalAlpha=1;
 }
 
 let particles=[];
-let compileState={phase:0,progress:0,done:false};
+let compileState={phase:0,progress:0,done:false,shellOutput:''};
 
 function spawnParticle(x,y,col){
 const angle=R()*Math.PI*2,speed=0.5+R()*2;
 particles.push(new Particle(x,y,Math.cos(angle)*speed,Math.sin(angle)*speed,col,40+R()*40));
 }
 
-// Tokenizer colors
-const KEYWORDS=['var','func','if','then','else','end','return','print','for','while','in','import','as'];
-const BUILTINS=['print','len','range','abs','max','min','type'];
+const KEYWORDS=['var','func','if','then','else','end','return','print','for','while','in','import','as','match','case','=>','with'];
+const BUILTINS=['print','len','range','abs','max','min','type','match'];
 
 function tokenize(src){
 const tokens=[];
-const re=/\s+|\/\/.*|"[^"]*"|'[^']*'|[a-zA-Z_]\w*|[+\-*/=<>!&|{}()\[\]:;,.\d]+/g;
+const re=/\s+|\/\/.*|"[^"]*"|'[^']*'|=>|@[a-zA-Z_]\w*|[a-zA-Z_]\w*|[+\-*/=<>!&|{}()[\]:;.]+|\d+/g;
 let m;while((m=re.exec(src))!==null){
 const w=m[0];if(!w.trim().length)continue;
 let type='ident';
 if(KEYWORDS.includes(w))type='kw';
 else if(BUILTINS.includes(w))type='builtin';
+else if(w.startsWith('@'))type='decorator';
 else if(/^\d/.test(w))type='number';
+else if(w==='=>')type='arrow';
 tokens.push({word:w,type});
 }
 return tokens;
 }
 
+// Simple Amber -> Bash compiler
+function amberToBash(src){
+const lines=src.split('\n');
+let bash='#!/bin/bash\n# Compiled by Amber Language\n# Generated from Amber source\n\n';
+let inFunc=0,indentStack=[];
+const funcStack=[];
+
+for(let i=0;i<lines.length;i++){
+const line=lines[i];
+const trimmed=line.trim();
+if(!trimmed||trimmed.startsWith('//')){
+if(trimmed.startsWith('//'))bash+=trimmed.replace('//','# ')+ '\n';
+continue;
+}
+
+// Decorator line (skip, compile to bash comments)
+if(trimmed.startsWith('@')){
+bash+=`# Decorator: ${trimmed.replace('@','')}\n`;
+continue;
+}
+
+// match statement
+if(trimmed.startsWith('match ')){
+const varName=trimmed.replace('match ','');
+bash+=`case $${varName} in\n`;
+inFunc++;
+continue;
+}
+
+// match case (N => val)
+const caseMatch=trimmed.match(/^(\d+|_)\s*=>\s*(.+)$/);
+if(caseMatch){
+const label=caseMatch[1]==='_':'*';
+const expr=caseMatch[2].replace(/\bif\b/g,'if [ ').replace(/\bthen\b/g,'then');
+bash+=`  ${label}) ${expr} ;;\n`;
+continue;
+}
+
+// match end
+if(trimmed==='end'){
+bash+='esac\n';
+inFunc--;
+continue;
+}
+
+// func declaration
+const funcMatch=trimmed.match(/^func\s+(\w+)\((\w+)\)/);
+if(funcMatch){
+bash+=`\n# ${funcMatch[1]} function\n${funcMatch[1]}(){\nlocal ${funcMatch[2]}=$1\n`;
+inFunc++;
+continue;
+}
+
+// func end
+if(trimmed==='end'&&inFunc>0){
+bash+='}\n';
+inFunc--;
+continue;
+}
+
+// variable assignment
+const varMatch=trimmed.match(/^var\s+(\w+)\s*=\s*"(.*)"/);
+if(varMatch){
+bash+=`export ${varMatch[1]}="${varMatch[2]}"\n`;
+continue;
+}
+
+// simple variable
+const varMatch2=trimmed.match(/^(\w+)\s*=\s*(.+)$/);
+if(varMatch2){
+bash+=`${varMatch2[1]}=${varMatch2[2]}\n`;
+continue;
+}
+
+// if statement
+const ifMatch=trimmed.match(/if\s+(.+)\s+then/);
+if(ifMatch){
+const cond=ifMatch[1].replace(/\bthen\b/,'').trim();
+bash+=`if [ ${cond} ]; then\n`;
+continue;
+}
+
+// if (single line)
+if(trimmed.startsWith('if ')){
+bash+=`if [ ${trimmed.replace('if ','').replace(/then$/,'').trim()} ]; then\n`;
+continue;
+}
+
+// return
+const retMatch=trimmed.match(/^return\s+(.+)$/);
+if(retMatch){
+bash+=`return ${retMatch[1]}\n`;
+continue;
+}
+
+// print -> echo
+const printMatch=trimmed.match(/^print\((.+)\)$/);
+if(printMatch){
+bash+=`echo ${printMatch[1].replace(/"/g,'\\\"')}\n`;
+continue;
+}
+
+// direct print (no parens)
+if(trimmed.startsWith('print ')){
+bash+=`echo "${trimmed.replace('print ','')}"\n`;
+continue;
+}
+
+// for loop
+const forMatch=trimmed.match(/for\s+(\w+)\s+in\s+(.+)$/);
+if(forMatch){
+bash+=`for ${forMatch[1]} in ${forMatch[2]}; do\n`;
+continue;
+}
+
+// while
+const whileMatch=trimmed.match(/while\s+(.+)$/);
+if(whileMatch){
+bash+=`while ${whileMatch[1]}; do\n`;
+continue;
+}
+
+// for/while end
+if(trimmed==='# done' || (trimmed.startsWith('# done'))){
+bash+='done\n';
+continue;
+}
+
+// default: pass through
+if(trimmed)bash+=`${line}\n`;
+}
+
+if(inFunc>0)bash+='}\n';
+return bash;
+}
+
 function doCompile(){
 const src=document.getElementById('code').value;
 if(!src.trim()){log('No source code','err');return}
-compileState={phase:0,progress:0,done:false};
+compileState={phase:0,progress:0,done:false,shellOutput:amberToBash(src)};
 particles=[];
 log('Starting Amber compilation...');
 const tokens=tokenize(src);
 document.getElementById('h-tok').textContent=tokens.length;
 log('Tokenized: '+tokens.length+' tokens');
+
+// Generate shell output
+const shellOutput=amberToBash(src);
+const outputDiv=document.getElementById('output-code');
+outputDiv.innerHTML=highlightBash(shellOutput);
+
+document.getElementById('output-area').classList.add('active');
+document.getElementById('input-area').classList.add('active');
+log('Shell output generated');
+}
+
+function highlightBash(code){
+return code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+.replace(/(#!.*|^\s*#.*)/gm,'<span class="cmt">$1</span>')
+.replace(/\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|return|export|local)\b/g,'<span class="kw">$1</span>')
+.replace(/"([^"]*)"/g,'"<span class="str">$1</span>"');
 }
 
 document.getElementById('compile-btn').addEventListener('click',doCompile);
 
-// Draw grid background
 function drawGrid(){
 cx.fillStyle='#0a0a12';cx.fillRect(0,0,W,H);
 cx.strokeStyle='#111122';cx.lineWidth=0.5;
@@ -170,21 +351,22 @@ for(let x=0;x<W;x+=g){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
 for(let y=0;y<H;y+=g){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
 }
 
-// Mode 0: Source Editor
+// === MODE 0: SOURCE EDITOR (enhanced) ===
 function drawSource(){
 drawGrid();
 const src=document.getElementById('code').value||defaultCode;
 const lines=src.split('\n');
-const lh=16;const startY=50;
+const lh=15;const startY=40;
 
-cx.font='13px SF Mono,Monaco,Consolas,monospace';
-// Syntax highlight
-for(let i=0;i<Math.min(lines.length,Math.floor((H-80)/lh));i++){
+cx.font='12px SF Mono,Monaco,Consolas,monospace';
+for(let i=0;i<Math.min(lines.length,Math.floor((H-60)/lh));i++){
 const y=startY+i*lh;
 const tokens=tokenize(lines[i]);
 let x=16;
 for(const t of tokens){
 if(t.type==='kw')cx.fillStyle='#f0a030';
+else if(t.type==='decorator')cx.fillStyle='#e040e0';
+else if(t.type==='arrow')cx.fillStyle='#8080f0';
 else if(t.type==='number')cx.fillStyle='#40c8a0';
 else if(t.type==='builtin')cx.fillStyle='#4080f0';
 else cx.fillStyle='#c8c8d4';
@@ -193,83 +375,68 @@ x+=cx.measureText(t.word).width+1;
 }
 }
 
-// Line numbers
-cx.fillStyle='#333';cx.font='11px monospace';
-for(let i=0;i<Math.min(lines.length,Math.floor((H-80)/lh));i++){
+cx.fillStyle='#333';cx.font='10px monospace';
+for(let i=0;i<Math.min(lines.length,Math.floor((H-60)/lh));i++){
 cx.fillText(''+(i+1),8,startY+i*lh);
 }
 
-// Token particles flowing from source
 if(tick%3===0){
-const lines=src.split('\n');
-const active=Math.min(lines.length,Math.floor((H-80)/lh));
+const active=Math.min(lines.length,Math.floor((H-60)/lh));
 const li=Math.floor(R()*active);
 const tokens=tokenize(lines[li]);
 if(tokens.length){
-const t=R()<0.15?'#f0a030':R()<0.3?'#40c8a0':R()<0.5?'#4080f0':'#888';
-const px=20+R()*300;
-spawnParticle(px,startY+li*lh+10,t);
+const t=R()<0.15?'#e040e0':R()<0.25?'#f0a030':R()<0.4?'#40c8a0':R()<0.55?'#4080f0':'#555';
+spawnParticle(20+R()*200,startY+li*lh+8,t);
 }
 }
-
-// Update particles
 particles=particles.filter(p=>{p.draw();return p.update()});
 
-// Title
-cx.fillStyle='#f0a03030';cx.font='bold 12px monospace';
-cx.fillText('AMBER SOURCE EDITOR — '+tokens.length+' tokens loaded',16,H-20);
+cx.fillStyle='#f0a03030';cx.font='bold 11px monospace';
+cx.fillText('AMBER SOURCE — '+tokenize(src.split('\n').filter((_,i)=>i<Math.min(10,lines.length)).join('\n')).length+' tokens | @decorator | match/=>',16,H-12);
 }
 
-// Mode 1: Compile Pipeline
+// === MODE 1: COMPILE PIPELINE (real-time) ===
 function drawCompile(){
 drawGrid();
-const stages=['TOKENIZE','PARSER','AST BUILDER','CODE GEN','SHELL OUTPUT'];
-const colors=['#40c8a0','#8080f0','#f0a030','#e040e0','#e04040'];
+const stages=['SOURCE','TOKENIZE','PARSE','TRANSFORM','CODE GEN','SHELL'];
+const colors=['#40c8a0','#8080f0','#f0a030','#e040e0','#e08040','#e04040'];
 const sx=W/2;
-const stageH=100;const startY=60;
+const stageH=90;const startY=50;
 
-// Draw pipeline stages
 for(let i=0;i<stages.length;i++){
 const y=startY+i*stageH;
 const active=compileState.phase>i;
 const current=compileState.phase===i;
 
-// Stage box
-const bw=300;
+const bw=Math.min(320,W-40);
 const bx=sx-bw/2;
-cx.strokeStyle=current?'#f0a030':active?'#40c8a044':'#1a1a3a';
+cx.strokeStyle=current?'#f0a030':active?'#40c8a066':'#1a1a3a';
 cx.lineWidth=current?2:1;
 cx.fillStyle=active?'#1a2a1a':'#0f0f1f';
-cx.fillRect(bx,y,bw,70);
-cx.strokeRect(bx,y,bw,70);
+cx.fillRect(bx,y,bw,65);cx.strokeRect(bx,y,bw,65);
 
-// Stage label
 cx.fillStyle=current?'#f0a030':active?'#40c8a0':'#555';
-cx.font='bold 12px monospace';
-cx.fillText(stages[i],sx-60,y+20);
+cx.font='bold 11px monospace';
+cx.fillText(stages[i],bx+10,y+20);
 
-// Progress bar
 if(current){
-const pw=(bw-40)*compileState.progress;
-cx.fillStyle='#f0a03044';cx.fillRect(bx+20,y+35,bw-40,12);
-cx.fillStyle='#f0a030';cx.fillRect(bx+20,y+35,pw,12);
-}
-else if(active){
-cx.fillStyle='#40c8a0';cx.fillRect(bx+20,y+35,bw-40,12);
-}
-else{
-cx.fillStyle='#222';cx.fillRect(bx+20,y+35,bw-40,12);
+const pw=(bw-60)*compileState.progress;
+cx.fillStyle='#f0a03044';cx.fillRect(bx+20,y+32,bw-60,10);
+cx.fillStyle='#f0a030';cx.fillRect(bx+20,y+32,pw,10);
+cx.fillStyle='#888';cx.font='9px monospace';
+cx.fillText(Math.floor(compileState.progress*100)+'%',bx+20,y+55);
+}else if(active){
+cx.fillStyle='#40c8a0';cx.fillRect(bx+20,y+32,bw-60,10);
+cx.fillStyle='#888';cx.font='9px monospace';
+cx.fillText('DONE',bx+20,y+55);
+}else{
+cx.fillStyle='#222';cx.fillRect(bx+20,y+32,bw-60,10);
+cx.fillStyle='#333';cx.font='9px monospace';
+cx.fillText('WAITING',bx+20,y+55);
 }
 
-// Stage icon
-cx.fillStyle=current?'#f0a030':'#444';
-cx.font='20px monospace';
-const icons=['&#9889;','&#9876;','&#9737;','&#9881;','&#9654;'];
-cx.fillText(icons[i]||'&#9679;',sx+140,y+22);
-
-// Connecting arrows
 if(i<stages.length-1){
-const ay=y+75;
+const ay=y+72;
 cx.strokeStyle='#2a2a4a';cx.lineWidth=1;
 cx.beginPath();cx.moveTo(sx-80,ay);cx.lineTo(sx+80,ay);cx.stroke();
 cx.fillStyle='#f0a030';cx.beginPath();
@@ -277,244 +444,439 @@ cx.moveTo(sx+80,ay);cx.lineTo(sx+74,ay-4);cx.lineTo(sx+74,ay+4);cx.fill();
 }
 }
 
-// Ambient particles in active stages
 if(tick%4===0){
-for(let i=0;i<Math.min(compileState.phase+1,5);i++){
-const y=startY+i*stageH+35;
+for(let i=0;i<Math.min(compileState.phase+1,6);i++){
+const y=startY+i*stageH+30;
 spawnParticle(sx+(R()-0.5)*100,y,colors[i]||'#f0a030');
 }
 }
 particles=particles.filter(p=>{p.draw();return p.update()});
 
-// Update compile progress
-if(compileState.phase<5&&!compileState.done){
+if(compileState.phase<6&&!compileState.done){
 if(compileState.progress<1){
-compileState.progress+=0.008+R()*0.005;
+compileState.progress+=0.012+R()*0.008;
 }else{
 compileState.phase++;compileState.progress=0;
-if(compileState.phase===5){
+if(compileState.phase===6){
 compileState.done=true;
-log('Compilation complete! Shell output generated.');
+log('Compilation complete! '+compileState.shellOutput.split('\n').length+' lines of shell output.');
 }
 }
 }
 
-// Status
 cx.fillStyle=compileState.done?'#40c8a0':'#f0a030';
-cx.font='bold 13px monospace';
-cx.textAlign='center';
-cx.fillText(compileState.done?'COMPILED SUCCESSFULLY':'COMPILING... '+Math.floor(compileState.progress*100)+'%',sx,H-20);
+cx.font='bold 12px monospace';cx.textAlign='center';
+cx.fillText(compileState.done?'COMPILED SUCCESSFULLY':'COMPILING... '+Math.floor(Math.min(compileState.progress*100,100))+'%',sx,H-15);
 cx.textAlign='left';
 document.getElementById('h-stg').textContent=compileState.phase;
+
+// Show shell output preview
+if(compileState.shellOutput){
+const lines=compileState.shellOutput.split('\n').slice(0,8);
+const previewY=H-80;
+cx.fillStyle='#0a0a12';cx.fillRect(10,previewY,W-20,70);
+cx.fillStyle='#333';cx.font='9px monospace';
+for(let i=0;i<lines.length&&i<4;i++){
+const l=lines[i].replace(/&/g,'&amp;').replace(/</g,'&lt;');
+cx.fillStyle=lines[i].trim().startsWith('#')?'#444':'#40c8a066';
+cx.fillText(lines[i].substring(0,50),15,previewY+14+i*15);
+}
+cx.fillStyle='#555';cx.font='9px monospace';
+cx.fillText('# compiled output preview...',W-140,previewY+14);
+}
 }
 
-// Mode 2: Target Compare
+// === MODE 2: COMPARE (8 language matrix) ===
 function drawCompare(){
 drawGrid();
-const targets=['BASH','KSH','ZSH'];
-const colors=['#e04040','#f0a030','#40c8a0'];
-const compat=[[100,85,78],[85,100,82],[78,82,100]];
-const w=120;const gap=20;const tw=targets.length*w+(targets.length-1)*gap;
-const startX=(W-tw)/2;const startY=40;
+const targets=[
+{name:'BASH',color:'#e04040',icon:'🐚'},
+{name:'KSH',color:'#e08040',icon:'🐚'},
+{name:'ZSH',color:'#f0a030',icon:'🐚'},
+{name:'PYTHON',color:'#40c8a0',icon:'🐍'},
+{name:'NODE.JS',color:'#40c8a0',icon:'⬢'},
+{name:'POWERSHELL',color:'#8080f0',icon:'💜'},
+{name:'RUBY',color:'#e040e0',icon:'💎'},
+{name:'GO',color:'#00bcd4',icon:'🔷'}
+];
 
-// Target cards
+const operations=[
+{label:'print',code:'echo "hi"',desc:'Basic output'},
+{label:'func',code:'func f(){}',desc:'Function def'},
+{label:'if/then',code:'if x;then',desc:'Conditional'},
+{label:'for/loop',code:'for i;do',desc:'Loop'},
+{label:'var x=y',code:'x=y',desc:'Assignment'},
+{label:'array',code:'a=()  # array',desc:'Array/List'},
+{label:'string+',code:'s="$a$b"',desc:'String concat'},
+{label:'read file',code:'cat file',desc:'File I/O'}
+];
+
+const compatMat=[];
 for(let i=0;i<targets.length;i++){
-const x=startX+i*(w+gap);
-const y=startY;
-
-// Card background
-cx.fillStyle='#0f0f1f';cx.strokeStyle=colors[i];cx.lineWidth=1;
-cx.fillRect(x,y,w,120);cx.strokeRect(x,y,w,120);
-
-// Target name
-cx.fillStyle=colors[i];cx.font='bold 14px monospace';
-cx.fillText(targets[i],x+w/2-20,y+25);
-
-// Compatibility ring
-const rx=x+w/2,ry=y+75,rr=30;
-cx.strokeStyle='#1a1a3a';cx.lineWidth=2;
-cx.beginPath();cx.arc(rx,ry,rr,0,6.28);cx.stroke();
-
-for(let j=0;j<3;j++){
-if(i===j)continue;
-const pct=compat[i][j]/100;
-const sa=-Math.PI/2+(j-i+3)%3*Math.PI*2/3;
-cx.strokeStyle=colors[j];cx.lineWidth=4;
-cx.beginPath();cx.arc(rx,ry,rr-2,sa,sa+pct*Math.PI*2/3);cx.stroke();
+compatMat[i]=[];
+for(let j=0;j<targets.length;j++){
+if(i===j){compatMat[i][j]=100;}
+else if((targets[i].name==='BASH'||targets[i].name==='KSH'||targets[i].name==='ZSH')&&
+(targets[j].name==='BASH'||targets[j].name==='KSH'||targets[j].name==='ZSH')){
+compatMat[i][j]=Math.floor(75+R()*15);}
+else if(targets[i].name==='PYTHON'&&targets[j].name==='GO'){
+compatMat[i][j]=Math.floor(30+R()*20);}
+else if(targets[i].name==='POWERSHELL'&&targets[j].name==='PYTHON'){
+compatMat[i][j]=Math.floor(45+R()*15);}
+else{compatMat[i][j]=Math.floor(20+R()*30);}
+}
 }
 
-// % label
-cx.fillStyle='#888';cx.font='10px monospace';
-cx.fillText('85% compat',x+w/2-25,y+115);
+// Language cards row
+const cardW=70;const cardGap=6;
+const totalW=targets.length*(cardW+cardGap)-cardGap;
+const startX=(W-totalW)/2;
+const cardY=20;
+
+for(let i=0;i<targets.length;i++){
+const x=startX+i*(cardW+cardGap);
+const c=targets[i];
+
+cx.fillStyle='#0f0f1f';cx.strokeStyle=c.color+'88';cx.lineWidth=1;
+cx.fillRect(x,cardY,cardW,45);cx.strokeRect(x,cardY,cardW,45);
+
+cx.fillStyle=c.color;cx.font='bold 9px monospace';cx.textAlign='center';
+cx.fillText(c.name,x+cardW/2,cardY+18);
+cx.font='14px monospace';
+cx.fillText(c.icon,x+cardW/2,cardY+38);
+cx.textAlign='left';
 }
 
 // Compatibility matrix
-const mx=W/2;const my=210;
-cx.fillStyle='#888';cx.font='bold 12px monospace';
-cx.textAlign='center';
-cx.fillText('COMPATIBILITY MATRIX',mx,my);
+const matTop=85;
+const cellW=(W-40)/targets.length;
+const cellH=30;
+const labelW=60;
+
+cx.fillStyle='#888';cx.font='bold 11px monospace';cx.textAlign='center';
+cx.fillText('COMPATIBILITY MATRIX',W/2,matTop+10);
+
+for(let i=0;i<targets.length;i++){
+for(let j=0;j<targets.length;j++){
+const x=10+j*cellW;
+const y=matTop+18+i*cellH;
+const v=compatMat[i][j];
+const intensity=v/100;
+
+cx.fillStyle=`rgba(${Math.round(240*intensity+20*(1-intensity))},${Math.round(160*intensity+30*(1-intensity))},${Math.round(48*intensity+50*(1-intensity))},${0.15+intensity*0.75})`;
+cx.fillRect(x+1,y+1,cellW-2,cellH-2);
+
+if(v>50){cx.fillStyle=v>=90?'#fff':'#ddd';}
+else{cx.fillStyle='#333';}
+cx.font='9px monospace';cx.textAlign='center';
+cx.fillText(''+Math.round(v),x+cellW/2,y+cellH/2+3);
+}
+}
 cx.textAlign='left';
 
-const ms=80;const mStartX=W/2-ms*1.5-40;
-for(let i=0;i<3;i++){
-cx.fillStyle='#888';cx.font='10px monospace';
-cx.fillText(targets[i],mStartX-20,my+30+i*ms);
+// Operation comparison bars
+const barY=matTop+18+targets.length*cellH+20;
+cx.fillStyle='#888';cx.font='bold 10px monospace';
+cx.fillText('SHELL COMPATIBILITY BY OPERATION',10,barY);
 
-for(let j=0;j<3;j++){
-const v=compat[i][j];
+const barStartY=barY+10;
+for(let op=0;op<operations.length&&op<6;op++){
+const by=barStartY+op*28;
+cx.fillStyle='#555';cx.font='9px monospace';
+cx.fillText(operations[op].desc,10,by+10);
+
+for(let t=0;t<targets.length;t++){
+const bx=140+t*(cellW);
+const v=compatMat[0][t]*(0.5+R()*0.5);
 const intensity=v/100;
-cx.fillStyle=`rgba(${Math.round(240*intensity+40*(1-intensity))},${Math.round(160*intensity+40*(1-intensity))},${Math.round(48*intensity+40*(1-intensity))},${0.3+intensity*0.7})`;
-cx.fillRect(mStartX,my+25+i*ms,ms,ms-4);
-cx.fillStyle='#000';cx.font='10px monospace';
-cx.fillText(''+v,mStartX+ms/2-8,my+25+i*ms+ms/2+3);
+cx.fillStyle=targets[t].color;
+cx.globalAlpha=0.3+intensity*0.7;
+cx.fillRect(bx,by+2,cellW-4,8);
+cx.globalAlpha=1;
 }
 }
 
-// Diff highlighting bar
-const diffBarY=my+30*4+10;
-cx.fillStyle='#555';cx.font='12px monospace';
-cx.fillText('SYNTAX DIFF',W/2,diffBarY);
+// Legend
+const legY=barStartY+6*28+10;
+cx.fillStyle='#888';cx.font='9px monospace';
+cx.fillText('Color scale: 0% (low) -> 100% (full) compatibility with shell ecosystems',10,legY);
 
-const diffs=[
-{line:'print("hello")',bash:'print("hello")',ksh:'echo "hello"',zsh:'print -r "hello"',match:false},
-{line:'func f() { }',bash:'# function f() { }',ksh:'function f { }',zsh:'f() { }',match:false},
-];
-
-for(let d=0;d<diffs.length;d++){
-const dy=diffBarY+20+d*25;
-cx.fillStyle='#333';cx.font='10px monospace';
-cx.fillText('#'+(d+1),16,dy);
-for(let t=0;t<3;t++){
-const tx2=W/4*(t+1)-20;
-cx.fillStyle=diffs[d].match?colors[t]:'#666';
-cx.font='9px monospace';
-const code=[diffs[d].bash,diffs[d].ksh,diffs[d].zsh][t];
-cx.fillText(code.substring(0,18),tx2,dy);
-}
-}
-
-// Ambient particles
-if(tick%6===0){
-const ti=Math.floor(R()*3);
-spawnParticle(startX+ti*(w+gap)+w/2,startY+60,colors[ti]);
+// Decorative particles from matrix
+if(tick%8===0){
+const ti=Math.floor(R()*targets.length);
+spawnParticle(startX+ti*(cardW+cardGap)+cardW/2,cardY+25,targets[ti].color);
 }
 particles=particles.filter(p=>{p.draw();return p.update()});
 }
 
-// Mode 3: Execution Sandbox
+// === MODE 3: DECORATORS & PATTERN MATCHING ===
+function drawDecorators(){
+drawGrid();
+const decs=[
+{name:'@cache',desc:'Memoize function results',color:'#f0a030',icon:'📦'},
+{name:'@retry',desc:'Auto-retry on failure',color:'#40c8a0',icon:'🔄'},
+{name:'@validate',desc:'Input validation',color:'#8080f0',icon:'✓'},
+{name:'@log',desc:'Trace execution',color:'#e040e0',icon:'📝'},
+{name:'@timeout',desc:'Execution deadline',color:'#e08040',icon:'⏱'},
+{name:'@memo',desc:'Persistent cache',color:'#4080f0',icon:'💾'}
+];
+
+// Decorator cards
+const cardW=130;const cardGap=12;
+const totalW=decs.length*(cardW+cardGap)-cardGap;
+const startX=(W-totalW)/2;
+
+for(let i=0;i<decs.length;i++){
+const d=decs[i];
+const x=startX+i*(cardW+cardGap);
+const y=30;
+
+// Card
+cx.fillStyle='#0f0f1f';
+cx.strokeStyle=d.color+'44';cx.lineWidth=1;
+cx.fillRect(x,y,cardW,80);cx.strokeRect(x,y,cardW,80);
+
+// Decorator name
+cx.fillStyle=d.color;cx.font='bold 12px monospace';
+cx.fillText(d.name,x+8,y+20);
+
+// Description
+cx.fillStyle='#888';cx.font='10px monospace';
+cx.fillText(d.desc,x+8,y+38);
+
+// Visual representation
+const cy=y+62;
+if(d.name==='@cache'){
+cx.fillStyle='#f0a03033';cx.fillRect(x+10,cy-12,cardW-20,24);
+cx.fillStyle='#f0a030';cx.font='10px monospace';
+cx.fillText('hit: 94%',x+15,cy+4);
+}else if(d.name==='@retry'){
+cx.strokeStyle='#40c8a0';cx.lineWidth=2;
+cx.beginPath();cx.arc(x+cardW/2,cy,12,0,6.28);cx.stroke();
+cx.fillStyle='#40c8a0';cx.font='10px monospace';
+cx.fillText('3/3 ok',x+cardW/2-15,cy+4);
+}else if(d.name==='@validate'){
+cx.fillStyle='#40c8a0';
+cx.beginPath();
+cx.moveTo(x+cardW/2-8,cy-8);
+cx.lineTo(x+cardW/2,cy+8);
+cx.lineTo(x+cardW/2+8,cy-8);
+cx.fill();
+cx.fillStyle='#888';cx.font='9px monospace';
+cx.fillText('all valid',x+cardW/2-18,cy+16);
+}else if(d.name==='@log'){
+cx.fillStyle='#555';cx.font='8px monospace';
+cx.fillText('[00:00.001] start',x+10,cy-4);
+cx.fillText('[00:00.003] end',x+10,cy+6);
+}else if(d.name==='@timeout'){
+cx.strokeStyle='#e08040';cx.lineWidth=1;
+cx.beginPath();cx.arc(x+cardW/2,cy-4,12,0,6.28);cx.stroke();
+cx.fillStyle='#e08040';cx.font='10px monospace';
+cx.fillText('5.0s',x+cardW/2-10,cy+8);
+}else{
+cx.fillStyle='#4080f0';cx.font='10px monospace';
+cx.fillText('persisted',x+15,cy+4);
+}
+}
+
+// Pattern matching visualization
+const pmY=130;
+cx.fillStyle='#f0a030';cx.font='bold 11px monospace';
+cx.fillText('PATTERN MATCHING — AST VISUALIZATION',10,pmY);
+
+const patterns=[
+{label:'match n',children:['0 => 1','1 => 1','_ => n * fact(n-1)']},
+{label:'match config',children:['{debug: true} => dev_mode','{debug: false} => prod_mode','_ => default_mode']},
+{label:'match response',children:['{status: 200} => success','{status: 500} => error','{status: _} => retry']}
+];
+
+const pmX=W/2-200;const pmTopY=pmY+15;
+const pmNodeW=180;
+
+for(let p=0;p<patterns.length;p++){
+const py=pmTopY+p*90;
+
+// Root node
+cx.fillStyle='#0f0f1f';cx.strokeStyle='#f0a03044';cx.lineWidth=1;
+cx.fillRect(pmX,py,pmNodeW,28);cx.strokeRect(pmX,py,pmNodeW,28);
+cx.fillStyle='#f0a030';cx.font='11px monospace';
+cx.fillText('match '+patterns[p].label.replace('match ',''),pmX+5,py+18);
+
+// Child nodes
+const childW=150;const childGap=3;
+const childStartX=pmX+(pmNodeW-childW)/2;
+const childY=py+35;
+
+for(let c=0;c<patterns[p].children.length;c++){
+const cx2=childStartX+c*(childW+childGap);
+const pat=patterns[p].children[c];
+const isGuard=c===patterns[p].children.length-1;
+
+cx.fillStyle=isGuard?'#e0804022':'#1a2a1a';
+cx.strokeStyle=isGuard?'#e08040':'#40c8a044';
+cx.lineWidth=1;
+cx.fillRect(cx2,childY,childW,22);cx.strokeRect(cx2,childY,childW,22);
+
+cx.fillStyle=isGuard?'#e08040':'#40c8a0';
+cx.font='10px monospace';
+cx.fillText(pat.substring(0,16),cx2+4,childY+14);
+
+// Connecting line from root
+cx.strokeStyle='#f0a03033';cx.lineWidth=1;
+cx.beginPath();cx.moveTo(pmX+pmNodeW/2,py+28);
+cx.lineTo(cx2+childW/2,childY);cx.stroke();
+}
+}
+
+// Decorator flow diagram
+const flowY=pmTopY+3*90+20;
+cx.fillStyle='#888';cx.font='bold 10px monospace';
+cx.fillText('DECORATOR COMPOSITION (stacked execution)',W/2,flowY);
+
+const decFlow=['@validate','@cache','@log','@retry','func body'];
+const flowColors=['#8080f0','#f0a030','#e040e0','#40c8a0','#40c8a0'];
+const flowW=100;const flowGap=8;
+const totalFW=decFlow.length*(flowW+flowGap)-flowGap;
+const flowSX=(W-totalFW)/2;
+const flowCY=flowY+15;
+
+for(let i=0;i<decFlow.length;i++){
+const fx=flowSX+i*(flowW+flowGap);
+
+cx.fillStyle='#0f0f1f';cx.strokeStyle=flowColors[i]+'88';cx.lineWidth=1;
+cx.fillRect(fx,flowCY,flowW,40);cx.strokeRect(fx,flowCY,flowW,40);
+
+cx.fillStyle=flowColors[i];cx.font='9px monospace';cx.textAlign='center';
+cx.fillText(decFlow[i],fx+flowW/2,flowCY+16);
+
+// Arrow between
+if(i<decFlow.length-1){
+cx.fillStyle=flowColors[i];
+cx.beginPath();
+cx.moveTo(fx+flowW+flowGap-4,flowCY+20);
+cx.lineTo(fx+flowW+flowGap-10,flowCY+16);
+cx.lineTo(fx+flowW+flowGap-10,flowCY+24);cx.fill();
+}
+cx.textAlign='left';
+}
+
+// Decorator particles
+if(tick%5===0){
+const di=Math.floor(R()*decs.length);
+spawnParticle(startX+di*(cardW+cardGap)+cardW/2,70,decs[di].color);
+}
+particles=particles.filter(p=>{p.draw();return p.update()});
+}
+
+// === MODE 4: SANDBOX ===
 function drawSandbox(){
 drawGrid();
-const env={vars:{greeting:'Hello from Amber',result:'720'},
-scope:'global',pipeline:['parse','compile','execute'],
-envVars:{HOME:'/home',SHELL:'/bin/amber',PATH:'.'}};
+const env={
+vars:{greeting:'Hello Amber',result:'720',name:'Amber',version:'1.0'},
+scope:'global',
+pipeline:['PARSE','TOKENIZE','TRANSFORM','CODE GEN','EXECUTE'],
+envVars:{HOME:'/home',SHELL:'/bin/amber',PATH:'.',LANG:'en_US'}
+};
 
-// Left panel: Variable Explorer
-const px=16;const py=20;
-cx.fillStyle='#0f0f1f';cx.fillRect(px,py,260,H-40);
-cx.strokeStyle='#1a1a3a';cx.lineWidth=1;cx.strokeRect(px,py,260,H-40);
+// Left panel
+const px=10;const py=20;
+cx.fillStyle='#0f0f1f';cx.fillRect(px,py,240,H-30);
+cx.strokeStyle='#1a1a3a';cx.lineWidth=1;cx.strokeRect(px,py,240,H-30);
 
-cx.fillStyle='#f0a030';cx.font='bold 12px monospace';
-cx.fillText('VARIABLE EXPLORER',px+10,py+22);
+cx.fillStyle='#f0a030';cx.font='bold 11px monospace';
+cx.fillText('VARIABLE EXPLORER',px+8,py+16);
 
-let vy=py+40;
-cx.fillStyle='#888';cx.font='11px monospace';
-cx.fillText('Scope: '+env.scope,px+10,vy);vy+=20;
-cx.fillText('--- Environment ---',px+10,vy);vy+=18;
+let vy=py+28;
+cx.fillStyle='#888';cx.font='10px monospace';
+cx.fillText('Scope: '+env.scope,px+8,vy);vy+=14;
+cx.fillStyle='#555';cx.fillText('--- Environment ---',px+8,vy);vy+=12;
 for(const[k,v]of Object.entries(env.envVars)){
-cx.fillStyle='#40c8a0';cx.fillText(k+'='+v,px+10,vy);vy+=16;
+cx.fillStyle='#40c8a0';cx.font='9px monospace';
+cx.fillText(k+'='+v,px+8,vy);vy+=14;
 }
-cx.fillStyle='#888';cx.fillText('--- Variables ---',px+10,vy);vy+=18;
+cx.fillStyle='#555';cx.fillText('--- Variables ---',px+8,vy);vy+=12;
 for(const[k,v]of Object.entries(env.vars)){
-cx.fillStyle='#f0a030';cx.fillText(k+' = "'+v+'"',px+10,vy);vy+=16;
+cx.fillStyle='#f0a030';cx.font='9px monospace';
+cx.fillText(k+' = '+v,px+8,vy);vy+=14;
 }
 
 // Center: Pipeline flow
-const cpx=W/2;const cpy=H/2;
-const pl=env.pipeline;
-cx.fillStyle='#888';cx.font='bold 12px monospace';
+cx.fillStyle='#888';cx.font='bold 11px monospace';
 cx.textAlign='center';
-cx.fillText('EXECUTION PIPELINE',cpx,30);
+cx.fillText('EXECUTION PIPELINE',W/2,20);
 cx.textAlign='left';
 
-const phaseWidth=160;const phaseGap=40;
-const totalW=pl.length*phaseWidth+(pl.length-1)*phaseGap;
-const pStartX=(W-totalW)/2;
+const pl=env.pipeline;
+const phaseW=120;const phaseGap=16;
+const totalPw=pl.length*phaseW+(pl.length-1)*phaseGap;
+const pSX=(W/2)-totalPw/2;
+const pY=35;
 
 for(let i=0;i<pl.length;i++){
-const x=pStartX+i*(phaseWidth+phaseGap);
-const y=50;
+const x=pSX+i*(phaseW+phaseGap);
+cx.fillStyle='#0f0f1f';cx.strokeStyle=i<3?'#40c8a0':'#2a2a4a';
+cx.lineWidth=1;
+cx.fillRect(x,pY,phaseW,50);cx.strokeRect(x,pY,phaseW,50);
 
-// Phase box
-cx.fillStyle='#0f0f1f';
-cx.strokeStyle='#2a2a4a';cx.lineWidth=1;
-cx.fillRect(x,y,phaseWidth,60);cx.strokeRect(x,y,phaseWidth,60);
-
-// Status indicator
-const done=3>i;
-if(done){
-cx.fillStyle='#40c8a0';
-cx.fillRect(x+8,y+8,6,6);
-}else{
-cx.fillStyle='#f0a030';
-cx.fillRect(x+8,y+8,6,6);
-}
-
+const done=i<3;
 cx.fillStyle=done?'#40c8a0':'#f0a030';
-cx.font='11px monospace';
-cx.fillText(pl[i].toUpperCase(),x+22,y+25);
+cx.fillRect(x+6,pY+6,5,5);
+cx.fillStyle=done?'#40c8a0':'#f0a030';
+cx.font='10px monospace';cx.textAlign='center';
+cx.fillText(pl[i].toUpperCase(),x+phaseW/2,pY+28);
+cx.textAlign='left';
 
-// Arrow between phases
 if(i<pl.length-1){
-const ax=x+phaseWidth+4;
-cx.strokeStyle='#f0a03066';cx.lineWidth=2;
-cx.beginPath();cx.moveTo(ax,y+30);cx.lineTo(ax+phaseGap-4,y+30);cx.stroke();
-cx.fillStyle='#f0a030';
-cx.beginPath();cx.moveTo(ax+phaseGap-4,y+30);
-cx.lineTo(ax+phaseGap-10,y+26);cx.lineTo(ax+phaseGap-10,y+34);cx.fill();
+cx.strokeStyle='#f0a03044';cx.lineWidth=1;
+cx.beginPath();cx.moveTo(x+phaseW,pY+25);
+cx.lineTo(x+phaseW+phaseGap-4,pY+25);cx.stroke();
+cx.fillStyle='#f0a03044';
+cx.beginPath();
+cx.moveTo(x+phaseW+phaseGap-4,pY+25);
+cx.lineTo(x+phaseW+phaseGap-10,pY+21);
+cx.lineTo(x+phaseW+phaseGap-10,pY+29);cx.fill();
 }
 }
 
-// Right panel: Event Log
-const rx=W-280;const ry=20;
-cx.fillStyle='#0f0f1f';cx.fillRect(rx,ry,260,H-40);
-cx.strokeStyle='#1a1a3a';cx.strokeRect(rx,ry,260,H-40);
+// Right panel: Event log
+const rx=W-250;const ry=10;
+cx.fillStyle='#0f0f1f';cx.fillRect(rx,ry,240,200);
+cx.strokeStyle='#1a1a3a';cx.strokeRect(rx,ry,240,200);
 
-cx.fillStyle='#f0a030';cx.font='bold 12px monospace';
-cx.fillText('EXECUTION LOG',rx+10,ry+22);
+cx.fillStyle='#f0a030';cx.font='bold 11px monospace';
+cx.fillText('EXECUTION LOG',rx+8,ry+16);
 
 const events=[
-{t:'00:00.001',msg:'Amber runtime initialized',color:'#40c8a0'},
-{t:'00:00.003',msg:'Tokenizing source (42 tokens)',color:'#888'},
-{t:'00:00.005',msg:'AST depth: 6 levels',color:'#888'},
-{t:'00:00.008',msg:'Generated bash-compatible output',color:'#f0a030'},
-{t:'00:00.010',msg:'Shell: /bin/bash --norc',color:'#40c8a0'},
-{t:'00:00.012',msg:'Running: print("Hello from Amber!")',color:'#40c8a0'},
-{t:'00:00.015',msg:'Output: Hello from Amber!',color:'#40c8a0'},
+{t:'00:00.001',msg:'Amber runtime v1.0 loaded',color:'#40c8a0'},
+{t:'00:00.003',msg:'Tokenizing source...',color:'#888'},
+{t:'00:00.006',msg:'AST built (depth: 6)',color:'#888'},
+{t:'00:00.010',msg:'Decorators applied: @cache, @retry',color:'#f0a030'},
+{t:'00:00.014',msg:'Code gen: 42 lines of Bash',color:'#f0a030'},
 {t:'00:00.018',msg:'Running: factorial(6)',color:'#40c8a0'},
-{t:'00:00.022',msg:'Recursion depth: 6',color:'#f0a030'},
-{t:'00:00.025',msg:'Result: 720',color:'#40c8a0'},
-{t:'00:00.030',msg:'Pipeline complete',color:'#40c8a0'},
+{t:'00:00.022',msg:'Recursion: depth 6, result 720',color:'#40c8a0'},
+{t:'00:00.025',msg:'Print: Hello Amber!',color:'#40c8a0'},
+{t:'00:00.030',msg:'Pipeline complete, exit 0',color:'#40c8a0'},
 ];
 
-for(let i=0;i<Math.min(events.length,Math.floor((H-60)/16));i++){
-const ey=ry+38+i*16;
-cx.fillStyle='#333';cx.font='9px monospace';
-cx.fillText(events[i].t,rx+10,ey);
+for(let i=0;i<Math.min(events.length,Math.floor(180/14));i++){
+const ey=ry+26+i*14;
+cx.fillStyle='#333';cx.font='8px monospace';
+cx.fillText(events[i].t,rx+6,ey);
 cx.fillStyle=events[i].color;
-cx.fillText(events[i].msg,rx+65,ey);
+cx.fillText(events[i].msg,rx+55,ey);
 }
-
-// Ambient particles from execution
-if(tick%5===0){
-spawnParticle(W/2+(R()-0.5)*200,50,'#f0a030');
-}
-particles=particles.filter(p=>{p.draw();return p.update()});
 
 // Exit code
-cx.fillStyle='#40c8a0';cx.font='bold 12px monospace';
+cx.fillStyle='#40c8a0';cx.font='bold 11px monospace';
 cx.textAlign='center';
-cx.fillText('EXIT CODE: 0 (SUCCESS)',W/2,H-20);
+cx.fillText('EXIT CODE: 0 (SUCCESS) | '+env.pipeline.length+' stages',W/2,H-15);
 cx.textAlign='left';
+
+// Decorative particles
+if(tick%5===0){
+spawnParticle(W/2+(R()-0.5)*200,40,'#f0a030');
+}
+particles=particles.filter(p=>{p.draw();return p.update()});
 }
 
 // Main loop
@@ -524,14 +886,16 @@ switch(mode){
 case 0:drawSource();break;
 case 1:drawCompile();break;
 case 2:drawCompare();break;
-case 3:drawSandbox();break;
+case 3:drawDecorators();break;
+case 4:drawSandbox();break;
 }
 requestAnimationFrame(animate);
 }
 
-log('Amber Compiler Pipeline v1.0 — Mode 0: Source Editor','warn');
-log('Swipe/arrow keys to switch modes','');
-log('Click COMPILE to run the compilation pipeline','');
+log('Amber Language Studio v2.0','warn');
+log('5 modes: Source, Compile, Compare, Decorators, Sandbox','');
+log('Click COMPILE to generate shell output','');
+log('Swipe/Arrow keys to switch modes','');
 animate();
 })();
 </script></body></html>
