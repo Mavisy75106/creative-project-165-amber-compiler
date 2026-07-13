@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amber Language Studio</title><style>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amber Language Studio v3</title><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a12;color:#c8c8d4;font-family:'SF Mono',Monaco,Consolas,monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 #header{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:linear-gradient(180deg,#14142a,#0a0a12);border-bottom:1px solid #1a1a3a;flex-shrink:0;z-index:10}
@@ -43,6 +43,7 @@ canvas{display:block;flex:1}
 <button class="mbtn" data-m="2">COMPARE</button>
 <button class="mbtn" data-m="3">DECORATORS</button>
 <button class="mbtn" data-m="4">SANDBOX</button>
+<button class="mbtn" data-m="5">AST</button>
 </div>
 <div id="hud"><span id="h-tok">0</span> tokens | <span id="h-stg">0</span> stages</div>
 </div>
@@ -109,15 +110,15 @@ cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX},{passive:true});
 cv.addEventListener('touchend',e=>{
 const d=e.changedTouches[0].clientX-tx;
 if(Math.abs(d)>50){
-if(d<0)mode=(mode+1)%5;else mode=(mode+4)%5;
+if(d<0)mode=(mode+1)%6;else mode=(mode+5)%6;
 document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)});
 }
 },{passive:true});
 
 // Keyboard nav
 document.addEventListener('keydown,e=>{
-if(e.key==='ArrowRight'){mode=(mode+1)%5;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
-if(e.key==='ArrowLeft'){mode=(mode+4)%5;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
+if(e.key==='ArrowRight'){mode=(mode+1)%6;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
+if(e.key==='ArrowLeft'){mode=(mode+5)%6;document.querySelectorAll('.mbtn').forEach((b,i)=>{b.classList.toggle('on',i===mode)})}
 if(e.key==='Enter'&&!e.ctrlKey){e.preventDefault();doCompile()}
 });
 
@@ -768,6 +769,319 @@ spawnParticle(startX+di*(cardW+cardGap)+cardW/2,70,decs[di].color);
 particles=particles.filter(p=>{p.draw();return p.update()});
 }
 
+// === MODE 5: AST VISUALIZER ===
+function parseAmberAST(src){
+const lines=src.split('\n');
+const ast={type:'program',children:[]};
+let currentBlock=ast;
+let funcName='';
+let inFunc=0;
+let inMatch=0;
+let matchVar='';
+let inMatchBranch=false;
+let matchBranch=null;
+
+for(let i=0;i<lines.length;i++){
+const line=lines[i];
+const trimmed=line.trim();
+if(!trimmed||trimmed.startsWith('//'))continue;
+
+// Decorator
+if(trimmed.startsWith('@')){
+const decNode={type:'decorator',value:trimmed.replace('@',''),children:[]};
+currentBlock.children.push(decNode);
+continue;
+}
+
+// match statement
+const matchM=trimmed.match(/^match\s+(\w+)(\s+on\s+(\w+))?$/);
+if(matchM){
+const matchNode={type:'match',variable:matchM[1],on:matchM[3]||null,branches:[],children:[]};
+currentBlock.children.push(matchNode);
+inMatch++;
+matchVar=matchM[1];
+inMatchBranch=false;
+currentBlock=matchNode;
+continue;
+}
+
+// match case
+const caseM=trimmed.match(/^(.+?)\s*=>\s*(.+)$/);
+if(caseM&&inMatch>0){
+const branchNode={type:'match-branch',pattern:caseM[1],guard:matchM&&matchM[3]?'on '+matchM[3]:null,children:[]};
+if(inMatchBranch&&matchBranch){
+matchBranch.children.push(branchNode);
+}else{
+currentBlock.branches.push(branchNode);
+matchBranch=branchNode;
+inMatchBranch=true;
+currentBlock=branchNode;
+}
+continue;
+}
+
+// match end
+if(trimmed==='end'&&inMatch>0){
+inMatch--;
+if(matchBranch){
+matchBranch=null;
+inMatchBranch=false;
+}
+currentBlock=matchVar==='main'?ast:matchVar==='main'?ast:{type:'program',children:[]};
+continue;
+}
+
+// func declaration
+const funcM=trimmed.match(/^func\s+(\w+)(?:\((\w+)\))?\s*(:\s*(.+))?$/);
+if(funcM){
+const funcNode={type:'function',name:funcM[1],param:funcM[2]||null,returns:funcM[4]||null,children:[]};
+currentBlock.children.push(funcNode);
+currentBlock=funcNode;
+inFunc++;
+funcName=funcM[1];
+continue;
+}
+
+// func end
+if(trimmed==='end'&&inFunc>0){
+inFunc--;
+currentBlock={type:'program',children:[]};
+funcName='';
+continue;
+}
+
+// if statement
+const ifM=trimmed.match(/^if\s+(.+?)\s+then$/);
+if(ifM){
+const condNode={type:'if',condition:ifM[1],thenBranch:[],elseBranch:[]};
+currentBlock.children.push(condNode);
+currentBlock=condNode;
+continue;
+}
+
+// if end (single line)
+if(trimmed==='fi'||(trimmed.startsWith('fi'))){
+if(currentBlock.type==='if'){
+currentBlock={type:'program',children:[]};
+}
+continue;
+}
+
+// variable assignment
+const varM=trimmed.match(/^(\w+)\s*=\s*(.+)$/);
+if(varM){
+const assignNode={type:'assign',name:varM[1],value:varM[2]};
+currentBlock.children.push(assignNode);
+continue;
+}
+
+// print statement
+const printM=trimmed.match(/^print\s*\((.+)\)$/);
+if(printM){
+const callNode={type:'call',name:'print',args:[printM[1]]};
+currentBlock.children.push(callNode);
+continue;
+}
+
+// direct print
+if(trimmed.startsWith('print ')){
+const callNode={type:'call',name:'print',args:[trimmed.replace('print ','')]};
+currentBlock.children.push(callNode);
+continue;
+}
+
+// for loop
+const forM=trimmed.match(/^for\s+(\w+)\s+in\s+(.+)$/);
+if(forM){
+const forNode={type:'for',variable:forM[1],iterable:forM[2],body:[]};
+currentBlock.children.push(forNode);
+currentBlock=forNode;
+continue;
+}
+
+// while
+const whileM=trimmed.match(/^while\s+(.+)$/);
+if(whileM){
+const whileNode={type:'while',condition:whileM[1],body:[]};
+currentBlock.children.push(whileNode);
+currentBlock=whileNode;
+continue;
+}
+
+// return
+const retM=trimmed.match(/^return\s+(.+)$/);
+if(retM){
+const retNode={type:'return',expression:retM[1]};
+currentBlock.children.push(retNode);
+continue;
+}
+
+// default: expression
+const exprNode={type:'expression',code:trimmed};
+currentBlock.children.push(exprNode);
+}
+
+return ast;
+}
+
+function getASTColor(type){
+const map={
+'program':'#f0a030',
+'function':'#40c8a0',
+'call':'#e08040',
+'assign':'#4080f0',
+'if':'#e04040',
+'for':'#8080f0',
+'while':'#8080f0',
+'return':'#e04040',
+'match':'#e040e0',
+'match-branch':'#40c8a0',
+'decorator':'#f0a030',
+'expression':'#888',
+'param':'#4080f0'
+};
+return map[type]||'#888';
+}
+
+function drawASTNode(node,x,y,w,h,depth,maxDepth,visits){
+if(depth>maxDepth)return;
+
+const nodeW=Math.min(180,w*0.8);
+const nodeH=22+depth*4;
+const nx=x-(nodeW/2)*(1+depth*0.15);
+const ny=y-nodeH/2;
+
+const color=getASTColor(node.type);
+const isSelected=visits.visited.has(visits.current);
+
+// Glow effect for visited nodes
+if(isSelected){
+cx.shadowColor=color;
+cx.shadowBlur=12;
+}
+
+// Draw node box
+cx.fillStyle=isSelected?color+'33':'#0f0f1f';
+cx.strokeStyle=isSelected?color:color+'66';
+cx.lineWidth=isSelected?2:1;
+cx.fillRect(nx,ny,nodeW,nodeH);
+cx.strokeRect(nx,ny,nodeW,nodeH);
+
+cx.shadowBlur=0;
+
+// Node text
+cx.fillStyle=isSelected?'#fff':'#888';
+cx.font=`${isSelected?'bold ':''}${11-depth}px monospace`;
+cx.textAlign='center';
+
+let label=node.type;
+if(node.type==='function')label='func '+node.name;
+else if(node.type==='call')label='call '+node.name;
+else if(node.type==='assign')label=node.name+' =';
+else if(node.type==='decorator')label='@'+node.value;
+else if(node.type==='match')label='match '+node.variable;
+else if(node.type==='if')label='if '+node.condition.substring(0,15);
+else if(node.type==='for')label='for '+node.variable;
+else if(node.type==='while')label='while';
+else if(node.type==='return')label='return '+(node.expression||'')+'...';
+else if(node.type==='match-branch')label=node.pattern+' => ...';
+else if(node.type==='expression')label=(node.code||'').substring(0,12);
+else label=node.type;
+
+if(label.length>18)label=label.substring(0,16)+'..';
+cx.fillText(label,nx+nodeW/2,ny+15);
+cx.textAlign='left';
+
+// Process children
+const childCount=Math.min(node.children?node.children.length:0,8);
+if(childCount>0&&depth<maxDepth){
+const childSpacing=nodeH+14;
+const startY=y+nodeH/2+8;
+
+for(let c=0;c<childCount;c++){
+const child=node.children[c];
+const childX=nx+nodeW/2+(c-childCount/2+0.5)*(nodeW/(childCount+1))*0.9;
+const childY=startY+c*childSpacing;
+
+// Draw connection line
+cx.strokeStyle=color+'44';
+cx.lineWidth=1;
+cx.beginPath();
+cx.moveTo(nx+nodeW/2,y+nodeH/2);
+cx.lineTo(childX,startY+c*childSpacing);
+cx.stroke();
+
+// Draw child node
+drawASTNode(child,childX,childY+childSpacing*0.5,
+nodeW*0.9,22,depth+1,maxDepth,visits);
+}
+}
+}
+
+function drawAST(){
+drawGrid();
+const src=document.getElementById('code').value||defaultCode;
+const ast=parseAmberAST(src);
+
+// Stats
+const totalNodes=countNodes(ast);
+const maxDepth=getMaxDepth(ast);
+
+cx.fillStyle='#888';cx.font='bold 10px monospace';
+cx.textAlign='center';
+cx.fillText('AST VISUALIZER — Abstract Syntax Tree',W/2,15);
+cx.textAlign='left';
+
+cx.fillStyle='#555';cx.font='9px monospace';
+cx.fillText(`Nodes: ${totalNodes} | Depth: ${maxDepth} | Source: ${src.split('\n').length} lines`,10,25);
+
+// Render tree centered
+const startX=W/2;
+const startY=55;
+const visits={current:0,max:totalNodes,visited:new Set()};
+
+// Draw root node
+drawASTNode(ast,startX,startY,200,30,0,Math.min(maxDepth,6),visits);
+
+// Legend
+const legY=H-60;
+cx.fillStyle='#555';cx.font='9px monospace';
+cx.textAlign='center';
+cx.fillText('Color key: func(🟢) call(🟠) assign(🔵) if(🔴) for/while(🟣) match(🟣) decorator(🟡) expression(⚪)',W/2,legY);
+cx.textAlign='left';
+
+// Decorative particles
+if(tick%5===0){
+const types=['program','function','call','assign','if','match'];
+const randomType=types[Math.floor(R()*types.length)];
+const px=10+R()*(W-20);
+const py=30+R()*(H-100);
+spawnParticle(px,py,getASTColor(randomType));
+}
+particles=particles.filter(p=>{p.draw();return p.update()});
+
+// Update HUD
+document.getElementById('h-tok').textContent=totalNodes+' nodes';
+document.getElementById('h-stg').textContent='depth '+maxDepth;
+}
+
+function countNodes(node){
+if(!node||!node.children)return 1;
+let count=1;
+for(const child of node.children)count+=countNodes(child);
+return count;
+}
+
+function getMaxDepth(node){
+if(!node||!node.children||node.children.length===0)return 1;
+let max=0;
+for(const child of node.children){
+const d=getMaxDepth(child);
+if(d>max)max=d;
+}
+return 1+max;
+}
+
 // === MODE 4: SANDBOX ===
 function drawSandbox(){
 drawGrid();
@@ -888,12 +1202,13 @@ case 1:drawCompile();break;
 case 2:drawCompare();break;
 case 3:drawDecorators();break;
 case 4:drawSandbox();break;
+case 5:drawAST();break;
 }
 requestAnimationFrame(animate);
 }
 
-log('Amber Language Studio v2.0','warn');
-log('5 modes: Source, Compile, Compare, Decorators, Sandbox','');
+log('Amber Language Studio v3.0','warn');
+log('6 modes: Source, Compile, Compare, Decorators, Sandbox, AST','');
 log('Click COMPILE to generate shell output','');
 log('Swipe/Arrow keys to switch modes','');
 animate();
