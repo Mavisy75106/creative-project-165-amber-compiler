@@ -1195,6 +1195,7 @@ particles=particles.filter(p=>{p.draw();return p.update()});
 
 // Main loop
 function animate(){
+resize();
 tick++;
 switch(mode){
 case 0:drawSource();break;
