@@ -1195,6 +1195,7 @@ particles=particles.filter(p=>{p.draw();return p.update()});
 
 // Main loop
 function animate(){
+if(window._amberMode !== undefined) mode = window._amberMode;
 resize();
 tick++;
 switch(mode){
