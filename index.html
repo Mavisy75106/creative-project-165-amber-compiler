@@ -122,8 +122,81 @@ if(e.key==='ArrowLeft'){mode=(mode+5)%6;document.querySelectorAll('.mbtn').forEa
 if(e.key==='Enter'&&!e.ctrlKey){e.preventDefault();doCompile()}
 });
 
+// Canvas mouse events for AST hover
+var _mouseX=0,_mouseY=0;
+cv.addEventListener('mousemove',e=>{
+if(mode!==5)return;
+const rect=cv.getBoundingClientRect();
+_mouseX=e.clientX-rect.left;
+_mouseY=e.clientY-rect.top;
+// Hit test against node bounds
+var hit=null;
+for(var i=_nodeBounds.length-1;i>=0;i--){
+var b=_nodeBounds[i];
+var r=b.rect;
+if(_mouseX>=r.x&&_mouseX<=r.x+r.w&&_mouseY>=r.y&&_mouseY<=r.y+r.h){
+hit=b.node;
+break;
+}
+}
+_hoveredNode=hit;
+});
+cv.addEventListener('mouseleave',()=>{_hoveredNode=null;});
+cv.addEventListener('click',e=>{
+if(mode!==5)return;
+for(var i=_nodeBounds.length-1;i>=0;i--){
+var b=_nodeBounds[i];
+var r=b.rect;
+if(_mouseX>=r.x&&_mouseX<=r.x+r.w&&_mouseY>=r.y&&_mouseY<=r.y+r.h){
+// Click to select node — animate through this node's children
+if(b.node.children&&b.node.children.length>0){
+// Collect all descendant nodes and animate through them
+var descendants=[];
+function collectDesc(n){
+if(n.children)n.children.forEach(function(c){descendants.push(c);collectDesc(c)});
+}
+collectDesc(b.node);
+if(descendants.length>0){
+// Use the first child as current for demo purposes
+var visits={current:0,max:descendants.length,visited:new Set()};
+// Set visits.current to first child to highlight it
+visits.current=0;
+visits.visited.add(descendants[0]);
+}
+}
+break;
+}
+}
+});
+
+// AST Interactive state
+var _astNodesFlat=[],_hoveredNode=null,_sourceHighlightLines=[];
+function flatAST(node,cb){if(!node)return;if(cb)cb(node);if(node.children)node.children.forEach(function(c){flatAST(c,cb)});}
+
+// AST node bounding box tracker
+var _nodeBounds=[];
+function buildNodeBounds(node,x,y,w,h,depth,maxDepth){
+if(depth>maxDepth||!node)return;
+const nodeW=Math.min(180,w*0.8);
+const nodeH=22+depth*4;
+const nx=x-(nodeW/2)*(1+depth*0.15);
+const ny=y-nodeH/2;
+_nodeBounds.push({node:node,rect:{x:nx,y:ny,w:nodeW,h:nodeH},depth:depth});
+const childCount=Math.min(node.children?node.children.length:0,8);
+if(childCount>0&&depth<maxDepth){
+const childSpacing=nodeH+14;
+const startY=y+nodeH/2+8;
+const childW2=w*0.8*0.9;
+for(var c=0;c<childCount;c++){
+const childX=nx+nodeW/2+(c-childCount/2+0.5)*(nodeW/(childCount+1))*0.9;
+const childY=startY+c*childSpacing;
+buildNodeBounds(node.children[c],childX,childY+childSpacing*0.5,childW2,22,depth+1,maxDepth);
+}
+}
+}
+
 // Seeded PRNG
-function rng(seed){let s=seed;return()=>{s=(s*1664525+1013904223)&0x7fffffff;return s/0x7fffffff}}
+function rng(seed){let s=seed;return()=>{s=(s*1664525+101****4223)&0x7fffffff;return s/0x7fffffff}}
 const R=rng(42);
 
 function log(msg,cls){
@@ -772,7 +845,7 @@ particles=particles.filter(p=>{p.draw();return p.update()});
 // === MODE 5: AST VISUALIZER ===
 function parseAmberAST(src){
 const lines=src.split('\n');
-const ast={type:'program',children:[]};
+const ast={type:'program',children:[],lineNumber:0};
 let currentBlock=ast;
 let funcName='';
 let inFunc=0;
@@ -788,7 +861,7 @@ if(!trimmed||trimmed.startsWith('//'))continue;
 
 // Decorator
 if(trimmed.startsWith('@')){
-const decNode={type:'decorator',value:trimmed.replace('@',''),children:[]};
+const decNode={type:'decorator',value:trimmed.replace('@',''),children:[],lineNumber:i+1};
 currentBlock.children.push(decNode);
 continue;
 }
@@ -796,7 +869,7 @@ continue;
 // match statement
 const matchM=trimmed.match(/^match\s+(\w+)(\s+on\s+(\w+))?$/);
 if(matchM){
-const matchNode={type:'match',variable:matchM[1],on:matchM[3]||null,branches:[],children:[]};
+const matchNode={type:'match',variable:matchM[1],on:matchM[3]||null,branches:[],children:[],lineNumber:i+1};
 currentBlock.children.push(matchNode);
 inMatch++;
 matchVar=matchM[1];
@@ -808,7 +881,7 @@ continue;
 // match case
 const caseM=trimmed.match(/^(.+?)\s*=>\s*(.+)$/);
 if(caseM&&inMatch>0){
-const branchNode={type:'match-branch',pattern:caseM[1],guard:matchM&&matchM[3]?'on '+matchM[3]:null,children:[]};
+const branchNode={type:'match-branch',pattern:caseM[1],guard:matchM&&matchM[3]?'on '+matchM[3]:null,children:[],lineNumber:i+1};
 if(inMatchBranch&&matchBranch){
 matchBranch.children.push(branchNode);
 }else{
@@ -834,7 +907,7 @@ continue;
 // func declaration
 const funcM=trimmed.match(/^func\s+(\w+)(?:\((\w+)\))?\s*(:\s*(.+))?$/);
 if(funcM){
-const funcNode={type:'function',name:funcM[1],param:funcM[2]||null,returns:funcM[4]||null,children:[]};
+const funcNode={type:'function',name:funcM[1],param:funcM[2]||null,returns:funcM[4]||null,children:[],lineNumber:i+1};
 currentBlock.children.push(funcNode);
 currentBlock=funcNode;
 inFunc++;
@@ -853,7 +926,7 @@ continue;
 // if statement
 const ifM=trimmed.match(/^if\s+(.+?)\s+then$/);
 if(ifM){
-const condNode={type:'if',condition:ifM[1],thenBranch:[],elseBranch:[]};
+const condNode={type:'if',condition:ifM[1],thenBranch:[],elseBranch:[],lineNumber:i+1};
 currentBlock.children.push(condNode);
 currentBlock=condNode;
 continue;
@@ -870,7 +943,7 @@ continue;
 // variable assignment
 const varM=trimmed.match(/^(\w+)\s*=\s*(.+)$/);
 if(varM){
-const assignNode={type:'assign',name:varM[1],value:varM[2]};
+const assignNode={type:'assign',name:varM[1],value:varM[2],lineNumber:i+1};
 currentBlock.children.push(assignNode);
 continue;
 }
@@ -878,14 +951,14 @@ continue;
 // print statement
 const printM=trimmed.match(/^print\s*\((.+)\)$/);
 if(printM){
-const callNode={type:'call',name:'print',args:[printM[1]]};
+const callNode={type:'call',name:'print',args:[printM[1]],lineNumber:i+1};
 currentBlock.children.push(callNode);
 continue;
 }
 
 // direct print
 if(trimmed.startsWith('print ')){
-const callNode={type:'call',name:'print',args:[trimmed.replace('print ','')]};
+const callNode={type:'call',name:'print',args:[trimmed.replace('print ','')],lineNumber:i+1};
 currentBlock.children.push(callNode);
 continue;
 }
@@ -893,7 +966,7 @@ continue;
 // for loop
 const forM=trimmed.match(/^for\s+(\w+)\s+in\s+(.+)$/);
 if(forM){
-const forNode={type:'for',variable:forM[1],iterable:forM[2],body:[]};
+const forNode={type:'for',variable:forM[1],iterable:forM[2],body:[],lineNumber:i+1};
 currentBlock.children.push(forNode);
 currentBlock=forNode;
 continue;
@@ -902,7 +975,7 @@ continue;
 // while
 const whileM=trimmed.match(/^while\s+(.+)$/);
 if(whileM){
-const whileNode={type:'while',condition:whileM[1],body:[]};
+const whileNode={type:'while',condition:whileM[1],body:[],lineNumber:i+1};
 currentBlock.children.push(whileNode);
 currentBlock=whileNode;
 continue;
@@ -911,13 +984,13 @@ continue;
 // return
 const retM=trimmed.match(/^return\s+(.+)$/);
 if(retM){
-const retNode={type:'return',expression:retM[1]};
+const retNode={type:'return',expression:retM[1],lineNumber:i+1};
 currentBlock.children.push(retNode);
 continue;
 }
 
 // default: expression
-const exprNode={type:'expression',code:trimmed};
+const exprNode={type:'expression',code:trimmed,lineNumber:i+1};
 currentBlock.children.push(exprNode);
 }
 
@@ -1032,19 +1105,150 @@ cx.textAlign='center';
 cx.fillText('AST VISUALIZER — Abstract Syntax Tree',W/2,15);
 cx.textAlign='left';
 
-cx.fillStyle='#555';cx.font='9px monospace';
-cx.fillText(`Nodes: ${totalNodes} | Depth: ${maxDepth} | Source: ${src.split('\n').length} lines`,10,25);
+// Source code lines for highlighting
+const srcLines=src.split('\n');
 
-// Render tree centered
+// Build node bounds for hit detection
+_nodeBounds=[];
+buildNodeBounds(ast,W/2,55,200,30,0,Math.min(maxDepth,6));
+
+// Track all line numbers from hovered node and children
+_sourceHighlightLines=[];
+if(_hoveredNode){
+function collectLines(n){
+if(!n)return;
+if(n.lineNumber)_sourceHighlightLines.push(n.lineNumber);
+if(n.children)n.children.forEach(collectLines);
+}
+collectLines(_hoveredNode);
+}
+
+// Highlight source lines on canvas (left margin)
+if(_sourceHighlightLines.length>0){
+const uniqueLines=[...new Set(_sourceHighlightLines)].sort((a,b)=>a-b);
+cx.fillStyle='#f0a03015';
+cx.fillRect(0,55,W,H-90);
+cx.fillStyle='#f0a03088';
+cx.font='9px monospace';
+for(let li=0;li<uniqueLines.length&&li<20;li++){
+const lineNum=uniqueLines[li];
+if(lineNum>=1&&lineNum<=srcLines.length){
+const ly=60+li*12;
+cx.fillStyle='#f0a03044';
+cx.fillRect(10,ly,W-20,10);
+cx.fillStyle='#f0a030';
+cx.fillText('Line '+lineNum+': '+srcLines[lineNum-1].trim().substring(0,40),15,ly+8);
+}
+}
+}
+
+// Render tree centered with hover highlighting
 const startX=W/2;
 const startY=55;
 const visits={current:0,max:totalNodes,visited:new Set()};
 
-// Draw root node
-drawASTNode(ast,startX,startY,200,30,0,Math.min(maxDepth,6),visits);
+// Draw root node with hover check
+function drawASTWithHover(node,x,y,w,h,depth,maxDepth,visits,hoverCheck){
+if(depth>maxDepth)return;
+
+const nodeW=Math.min(180,w*0.8);
+const nodeH=22+depth*4;
+const nx=x-(nodeW/2)*(1+depth*0.15);
+const ny=y-nodeH/2;
+
+const color=getASTColor(node.type);
+const isHovered=hoverCheck(node);
+const isSelected=visits.visited.has(visits.current);
+
+// Glow effect
+if(isHovered||isSelected){
+cx.shadowColor=color;
+cx.shadowBlur=15;
+cx.strokeStyle=isHovered?'#fff':color;
+cx.lineWidth=2.5;
+cx.strokeRect(nx-2,ny-2,nodeW+4,nodeH+4);
+cx.shadowBlur=0;
+}
+
+// Draw node box
+cx.fillStyle=(isHovered?'#fff':isSelected?color+'33':'#0f0f1f');
+cx.strokeStyle=isHovered?color+':66':isSelected?color:color+'66';
+cx.lineWidth=isHovered?2:1;
+cx.fillRect(nx,ny,nodeW,nodeH);
+cx.strokeRect(nx,ny,nodeW,nodeH);
+
+// Node text
+cx.fillStyle=isHovered?'#000':'#888';
+cx.font=`${isHovered?'bold ':''}${11-depth}px monospace`;
+cx.textAlign='center';
+
+let label=node.type;
+if(node.type==='function')label='func '+node.name;
+else if(node.type==='call')label='call '+node.name;
+else if(node.type==='assign')label=node.name+' =';
+else if(node.type==='decorator')label='@'+node.value;
+else if(node.type==='match')label='match '+node.variable;
+else if(node.type==='if')label='if '+node.condition.substring(0,15);
+else if(node.type==='for')label='for '+node.variable;
+else if(node.type==='while')label='while';
+else if(node.type==='return')label='return '+(node.expression||'')+'...';
+else if(node.type==='match-branch')label=node.pattern+' => ...';
+else if(node.type==='expression')label=(node.code||'').substring(0,12);
+else label=node.type;
+
+if(label.length>18)label=label.substring(0,16)+'..';
+cx.fillText(label,nx+nodeW/2,ny+15);
+cx.textAlign='left';
+
+// Tooltip for hovered node
+if(isHovered){
+let tip=node.type;
+if(node.name)tip+=' ('+node.name+')';
+if(node.variable)tip+=' on '+node.variable;
+if(node.condition)tip+=' — '+node.condition;
+if(node.expression)tip+=' — '+node.expression;
+if(node.lineNumber)tip+=' [Line '+node.lineNumber+']';
+cx.fillStyle='#f0a030';
+cx.font='bold 10px monospace';
+cx.textAlign='left';
+cx.fillText('⬥ '+tip,10,H-45);
+}
+
+// Process children
+const childCount=Math.min(node.children?node.children.length:0,8);
+if(childCount>0&&depth<maxDepth){
+const childSpacing=nodeH+14;
+const startY=y+nodeH/2+8;
+
+for(let c=0;c<childCount;c++){
+const child=node.children[c];
+const childX=nx+nodeW/2+(c-childCount/2+0.5)*(nodeW/(childCount+1))*0.9;
+const childY=startY+c*childSpacing;
+
+// Draw connection line
+cx.strokeStyle=color+'44';
+cx.lineWidth=1;
+cx.beginPath();
+cx.moveTo(nx+nodeW/2,y+nodeH/2);
+cx.lineTo(childX,startY+c*childSpacing);
+cx.stroke();
+
+// Draw child node
+drawASTWithHover(child,childX,childY+childSpacing*0.5,
+nodeW*0.9,22,depth+1,maxDepth,visits,hoverCheck);
+}
+}
+}
+
+// Hover check function
+function isNodeHovered(node){
+return _hoveredNode===node;
+}
+
+drawASTWithHover(ast,startX,startY,200,30,0,Math.min(maxDepth,6),visits,isNodeHovered);
 
 // Legend
-const legY=H-60;
+const legY=H-30;
 cx.fillStyle='#555';cx.font='9px monospace';
 cx.textAlign='center';
 cx.fillText('Color key: func(🟢) call(🟠) assign(🔵) if(🔴) for/while(🟣) match(🟣) decorator(🟡) expression(⚪)',W/2,legY);
